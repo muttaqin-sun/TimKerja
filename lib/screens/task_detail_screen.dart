@@ -103,7 +103,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
-  // DIALOG ATTACH A LINK (Sesuai Gambar 2)
   void _showAttachLinkDialog() {
     showDialog(
       context: context,
@@ -190,7 +189,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
-  // MENU ATTACHMENT BOTTOM SHEET (Sesuai Gambar 1)
   void _showAttachmentBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -288,6 +286,381 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFauxDropdown({
+    required String text,
+    required List<String> items,
+    required Function(String) onSelected,
+  }) {
+    return PopupMenuButton<String>(
+      onSelected: onSelected,
+      color: AppColors.surface,
+      itemBuilder: (context) {
+        return items
+            .map(
+              (item) => PopupMenuItem(
+                value: item,
+                child: Text(
+                  item,
+                  style: AppTextStyles.inputText.copyWith(fontSize: 14),
+                ),
+              ),
+            )
+            .toList();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade400, width: 1.5),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.inputText.copyWith(fontSize: 14),
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 20, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showStartDateDialog(Map<String, dynamic> task) {
+    String localDateText = task['startDate'] ?? "Tanggal";
+    String localTimeText = task['startTime'] ?? "Waktu";
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              title: Text(
+                'Start date',
+                style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: _buildFauxDropdown(
+                          text: localDateText,
+                          items: [
+                            'Hari ini',
+                            'Besok',
+                            'Minggu Depan',
+                            'Pilih tanggal...',
+                          ],
+                          onSelected: (val) async {
+                            if (val == 'Pilih tanggal...') {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                              );
+                              if (date != null) {
+                                setModalState(
+                                  () => localDateText =
+                                      "${date.day}/${date.month}/${date.year}",
+                                );
+                              }
+                            } else {
+                              setModalState(() => localDateText = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 4,
+                        child: _buildFauxDropdown(
+                          text: localTimeText,
+                          items: [
+                            'Pagi',
+                            'Siang',
+                            'Sore',
+                            'Malam',
+                            'Pilih waktu...',
+                          ],
+                          onSelected: (val) async {
+                            if (val == 'Pilih waktu...') {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
+                              if (time != null) {
+                                setModalState(
+                                  () => localTimeText =
+                                      "${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}",
+                                );
+                              }
+                            } else {
+                              setModalState(() => localTimeText = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => setModalState(() {
+                          localDateText = "Tanggal";
+                          localTimeText = "Waktu";
+                        }),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'CANCEL',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    // Update data ke memori global
+                    AppDataController.instance.setTaskStartDate(
+                      widget.taskId,
+                      localDateText,
+                      localTimeText,
+                    );
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'DONE',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDueDateDialog(Map<String, dynamic> task) {
+    String localDateText = task['dueDate'] ?? "Tanggal";
+    String localTimeText = task['dueTime'] ?? "Waktu";
+    String localReminder = task['reminder'] ?? "1 hari sebelumnya";
+    bool localAddMe = task['addMeToCard'] ?? false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              title: Text(
+                'Due date',
+                style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: _buildFauxDropdown(
+                          text: localDateText,
+                          items: [
+                            'Hari ini',
+                            'Besok',
+                            'Minggu Depan',
+                            'Pilih tanggal...',
+                          ],
+                          onSelected: (val) async {
+                            if (val == 'Pilih tanggal...') {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                              );
+                              if (date != null)
+                                setModalState(
+                                  () => localDateText =
+                                      "${date.day}/${date.month}/${date.year}",
+                                );
+                            } else {
+                              setModalState(() => localDateText = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 4,
+                        child: _buildFauxDropdown(
+                          text: localTimeText,
+                          items: [
+                            'Pagi',
+                            'Siang',
+                            'Sore',
+                            'Malam',
+                            'Pilih waktu...',
+                          ],
+                          onSelected: (val) async {
+                            if (val == 'Pilih waktu...') {
+                              final time = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
+                              if (time != null)
+                                setModalState(
+                                  () => localTimeText =
+                                      "${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}",
+                                );
+                            } else {
+                              setModalState(() => localTimeText = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => setModalState(() {
+                          localDateText = "Tanggal";
+                          localTimeText = "Waktu";
+                        }),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Set reminder',
+                    style: AppTextStyles.cardSubtitle.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildFauxDropdown(
+                          text: localReminder,
+                          items: [
+                            'Pada saat tenggat waktu',
+                            '15 menit sebelumnya',
+                            '1 jam sebelumnya',
+                            '1 hari sebelumnya',
+                          ],
+                          onSelected: (val) =>
+                              setModalState(() => localReminder = val),
+                        ),
+                      ),
+                      const SizedBox(width: 28),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Reminders are only sent to members and watchers of the card.',
+                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Add me to the card',
+                        style: AppTextStyles.inputText.copyWith(fontSize: 14),
+                      ),
+                      SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: Checkbox(
+                          value: localAddMe,
+                          activeColor: Colors.blue,
+                          onChanged: (val) =>
+                              setModalState(() => localAddMe = val ?? false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'CANCEL',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    // Update data ke memori global
+                    AppDataController.instance.setTaskDueDate(
+                      widget.taskId,
+                      localDateText,
+                      localTimeText,
+                      localReminder,
+                      localAddMe,
+                    );
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'DONE',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -657,6 +1030,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ? Color(coverColorVal)
             : null;
 
+        // Membaca tanggal dari global state
+        final String startDateDisplay =
+            (task['startDate'] != null && task['startDate'] != 'Tanggal')
+            ? "${task['startDate']} ${task['startTime'] ?? ''}"
+            : "";
+        final String dueDateDisplay =
+            (task['dueDate'] != null && task['dueDate'] != 'Tanggal')
+            ? "${task['dueDate']} ${task['dueTime'] ?? ''}"
+            : "";
+
         return Scaffold(
           backgroundColor: AppColors.background,
           resizeToAvoidBottomInset: true,
@@ -883,6 +1266,65 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           ],
                         ),
                       ],
+                      const SizedBox(height: 20),
+
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: Colors.grey.shade200),
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.schedule_rounded,
+                            color: AppColors.textPrimary,
+                            size: 20,
+                          ),
+                          title: Text(
+                            'Start date',
+                            style: AppTextStyles.sectionTitle.copyWith(
+                              fontSize: 14,
+                            ),
+                          ),
+                          trailing: startDateDisplay.isNotEmpty
+                              ? Text(
+                                  startDateDisplay,
+                                  style: AppTextStyles.cardSubtitle,
+                                )
+                              : null,
+                          onTap: () => _showStartDateDialog(task),
+                        ),
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: Colors.grey.shade200),
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            Icons.access_time_rounded,
+                            color: AppColors.textPrimary,
+                            size: 20,
+                          ),
+                          title: Text(
+                            'Due date',
+                            style: AppTextStyles.sectionTitle.copyWith(
+                              fontSize: 14,
+                            ),
+                          ),
+                          trailing: dueDateDisplay.isNotEmpty
+                              ? Text(
+                                  dueDateDisplay,
+                                  style: AppTextStyles.cardSubtitle,
+                                )
+                              : null,
+                          onTap: () => _showDueDateDialog(task),
+                        ),
+                      ),
+
                       const SizedBox(height: 24),
 
                       Row(

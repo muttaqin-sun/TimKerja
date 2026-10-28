@@ -4,8 +4,6 @@ class AppDataController extends ChangeNotifier {
   static final AppDataController instance = AppDataController._internal();
   AppDataController._internal();
 
-  // 1. DATA PROFIL & RBAC GLOBAL
-  // Ubah value ini menjadi 'Anggota' jika ingin mengetes fitur Join Board
   String currentUserRole = 'Pembuat Board';
   Map<String, dynamic> currentUserProfile = {
     'name': 'Ilham',
@@ -14,7 +12,6 @@ class AppDataController extends ChangeNotifier {
     'avatarColor': 0xFF0F766E,
   };
 
-  // 2. Data Boards (Ditambahkan 'code')
   List<Map<String, dynamic>> boards = [
     {
       'id': 'b1',
@@ -22,7 +19,7 @@ class AppDataController extends ChangeNotifier {
       'desc': 'Proyek tugas pemrograman & UI/UX',
       'color': 0xFF004D40,
       'privacy': 'Private',
-      'code': 'KULIAH-TI-8X2P', // Kode dummy
+      'code': 'KULIAH-TI-8X2P',
       'lists': ['Tugas Harian', 'Projek Akhir', 'Revisi'],
       'lockedLists': <String>[],
       'members': [
@@ -37,7 +34,7 @@ class AppDataController extends ChangeNotifier {
       'desc': 'Manajemen proyek utama',
       'color': 0xFF16A34A,
       'privacy': 'Workspace',
-      'code': 'PROJ-A-9Y3Q', // Kode dummy
+      'code': 'PROJ-A-9Y3Q',
       'lists': ['Tahap 1', 'Tahap 2', 'Selesai'],
       'lockedLists': <String>['Selesai'],
       'members': [
@@ -47,7 +44,6 @@ class AppDataController extends ChangeNotifier {
     },
   ];
 
-  // (Data Tasks, Notifications, Recent Activities tidak berubah)
   List<Map<String, dynamic>> tasks = [
     {
       'id': 't1',
@@ -61,6 +57,12 @@ class AppDataController extends ChangeNotifier {
       'isDone': false,
       'coverColor': null,
       'coverSize': 'header',
+      'startDate': '25 Okt',
+      'startTime': '08.00',
+      'dueDate': '26 Okt',
+      'dueTime': '23.59',
+      'reminder': '1 hari sebelumnya',
+      'addMeToCard': true,
       'subtasks': [
         {'title': 'Login Screen', 'isDone': true},
         {'title': 'Home Screen', 'isDone': false},
@@ -94,6 +96,12 @@ class AppDataController extends ChangeNotifier {
       'isDone': false,
       'coverColor': null,
       'coverSize': 'header',
+      'startDate': null,
+      'startTime': null,
+      'dueDate': null,
+      'dueTime': null,
+      'reminder': '1 hari sebelumnya',
+      'addMeToCard': false,
       'subtasks': <Map<String, dynamic>>[],
       'comments': <Map<String, dynamic>>[],
       'attachments': <Map<String, dynamic>>[],
@@ -144,7 +152,66 @@ class AppDataController extends ChangeNotifier {
     {'id': 'a2', 'title': 'Sari commented on Project A', 'time': '4h ago'},
   ];
 
-  // --- METHODS ---
+  // Getter Cerdas untuk Today's Tasks
+  List<Map<String, dynamic>> get todayTasks {
+    return tasks
+        .where(
+          (t) =>
+              t['date'] == 'Today' ||
+              t['dueDate'] == 'Hari ini' ||
+              t['dueDate'] == 'Today',
+        )
+        .toList();
+  }
+
+  // ==========================================
+  // FITUR BARU: AUTO LOG RECENT ACTIVITY
+  // ==========================================
+  void logActivity(String title) {
+    recentActivities.insert(0, {
+      'id': 'act_${DateTime.now().millisecondsSinceEpoch}',
+      'title': title,
+      'time': 'Baru saja',
+    });
+    if (recentActivities.length > 10) {
+      recentActivities.removeLast(); // Maksimal 10 log tersimpan
+    }
+    notifyListeners();
+  }
+
+  // ==========================================
+  // FITUR BARU: CRUD NOTIFICATIONS
+  // ==========================================
+  void markNotificationAsRead(String notifId) {
+    final notif = notifications.firstWhere(
+      (n) => n['id'] == notifId,
+      orElse: () => {},
+    );
+    if (notif.isNotEmpty && notif['isRead'] == false) {
+      notif['isRead'] = true;
+      notifyListeners();
+    }
+  }
+
+  void markAllNotificationsAsRead() {
+    bool isChanged = false;
+    for (var notif in notifications) {
+      if (notif['isRead'] == false) {
+        notif['isRead'] = true;
+        isChanged = true;
+      }
+    }
+    if (isChanged) notifyListeners();
+  }
+
+  void deleteNotification(String notifId) {
+    notifications.removeWhere((n) => n['id'] == notifId);
+    notifyListeners();
+  }
+
+  // ==========================================
+  // METHODS LAINNYA
+  // ==========================================
 
   void addBoard(
     String title,
@@ -154,7 +221,6 @@ class AppDataController extends ChangeNotifier {
     List<String>? initialLists,
   }) {
     String generateCode() {
-      // Dummy generator kode sederhana
       return 'BRD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
     }
 
@@ -174,15 +240,15 @@ class AppDataController extends ChangeNotifier {
         },
       ],
     });
+
+    logActivity('Membuat board baru: "$title"'); // Auto Log
     notifyListeners();
   }
 
-  // TODO: Supabase Integration - Akan diganti dengan request API RPC ke backend
   bool joinBoardByCode(String code) {
     final boardIndex = boards.indexWhere(
       (b) => b['code'] == code.trim().toUpperCase(),
     );
-
     if (boardIndex != -1) {
       final board = boards[boardIndex];
       List<dynamic> members = List.from(board['members'] ?? []);
@@ -196,6 +262,8 @@ class AppDataController extends ChangeNotifier {
           'color': currentUserProfile['avatarColor'],
         });
         board['members'] = members;
+
+        logActivity('Bergabung ke board: "${board['title']}"'); // Auto Log
         notifyListeners();
         return true;
       }
@@ -319,11 +387,19 @@ class AppDataController extends ChangeNotifier {
       'isDone': false,
       'coverColor': null,
       'coverSize': 'header',
+      'startDate': null,
+      'startTime': null,
+      'dueDate': null,
+      'dueTime': null,
+      'reminder': '1 hari sebelumnya',
+      'addMeToCard': false,
       'subtasks': <Map<String, dynamic>>[],
       'comments': <Map<String, dynamic>>[],
       'attachments': <Map<String, dynamic>>[],
       'members': <Map<String, dynamic>>[],
     });
+
+    logActivity('Menambahkan tugas: "$title"'); // Auto Log
     notifyListeners();
   }
 
@@ -341,6 +417,13 @@ class AppDataController extends ChangeNotifier {
       bool currentVal = task['isDone'] as bool;
       task['isDone'] = !currentVal;
       task['status'] = task['isDone'] ? 'Done' : 'To Do';
+
+      // Auto Log
+      logActivity(
+        task['isDone']
+            ? 'Menyelesaikan tugas: "${task['title']}"'
+            : 'Membuka kembali tugas: "${task['title']}"',
+      );
       notifyListeners();
     }
   }
@@ -403,6 +486,38 @@ class AppDataController extends ChangeNotifier {
         'text': text,
         'time': 'Baru saja',
       });
+
+      logActivity('Mengomentari tugas: "${task['title']}"'); // Auto Log
+      notifyListeners();
+    }
+  }
+
+  void setTaskStartDate(String taskId, String date, String time) {
+    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    if (task.isNotEmpty) {
+      task['startDate'] = date;
+      task['startTime'] = time;
+      notifyListeners();
+    }
+  }
+
+  void setTaskDueDate(
+    String taskId,
+    String date,
+    String time,
+    String reminder,
+    bool addMeToCard,
+  ) {
+    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    if (task.isNotEmpty) {
+      task['dueDate'] = date;
+      task['dueTime'] = time;
+      task['reminder'] = reminder;
+      task['addMeToCard'] = addMeToCard;
+
+      if (date != 'Tanggal') {
+        task['date'] = date;
+      }
       notifyListeners();
     }
   }

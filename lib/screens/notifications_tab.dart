@@ -281,12 +281,50 @@ class _NotificationsTabState extends State<NotificationsTab> {
                     'Notifications',
                     style: AppTextStyles.authTitle.copyWith(fontSize: 24),
                   ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.tune_rounded,
-                      color: AppColors.textPrimary,
-                    ),
-                    onPressed: _showFilterBottomSheet,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          AppDataController.instance.markAllNotificationsAsRead();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Semua notifikasi ditandai telah dibaca'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.done_all_rounded,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                        label: Text(
+                          'Baca semua',
+                          style: AppTextStyles.cardSubtitle.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: Icon(
+                          Icons.tune_rounded,
+                          color: AppColors.textPrimary,
+                        ),
+                        onPressed: _showFilterBottomSheet,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -376,11 +414,13 @@ class _NotificationsTabState extends State<NotificationsTab> {
                       itemBuilder: (context, index) {
                         final item = displayList[index];
                         return _buildNotificationItem(
+                          id: item['id'],
                           icon: item['icon'],
                           title: item['title'],
                           subtitle: item['subtitle'],
                           time: item['time'],
                           priority: item['priority'],
+                          isRead: item['isRead'] ?? false,
                         );
                       },
                     );
@@ -395,11 +435,13 @@ class _NotificationsTabState extends State<NotificationsTab> {
   }
 
   Widget _buildNotificationItem({
+    required String id,
     required IconData icon,
     required String title,
     required String subtitle,
     required String time,
     required String priority,
+    required bool isRead,
   }) {
     Color badgeBgColor;
     Color badgeTextColor;
@@ -424,85 +466,227 @@ class _NotificationsTabState extends State<NotificationsTab> {
         break;
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderLight),
-        boxShadow: const [AppShadows.subtleBorder],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: dynamicIconColor.withOpacity(0.1),
-              shape: BoxShape.circle,
+    return Dismissible(
+      key: Key(id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(icon, size: 20, color: dynamicIconColor),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: badgeBgColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        priority,
-                        style: AppTextStyles.badgeText.copyWith(
-                          color: badgeTextColor,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: 16,
-                      color: AppColors.textMuted,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.cardSubtitle.copyWith(height: 1.4),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  time,
+            title: Text(
+              'Hapus Notifikasi?',
+              style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
+            ),
+            content: Text(
+              'Apakah Anda yakin ingin menghapus notifikasi ini?',
+              style: AppTextStyles.cardSubtitle,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text(
+                  'Batal',
                   style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
+                    color: Colors.grey,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text(
+                  'Hapus',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (_) {
+        AppDataController.instance.deleteNotification(id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notifikasi telah dihapus'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.delete_sweep_rounded,
+              color: Colors.white,
+              size: 26,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Hapus',
+              style: AppTextStyles.cardTitle.copyWith(
+                color: Colors.white,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isRead ? AppColors.surface : AppColors.surface.withAlpha(245),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isRead ? AppColors.borderLight : AppColors.primary.withOpacity(0.35),
+            width: isRead ? 1.0 : 1.4,
+          ),
+          boxShadow: const [AppShadows.subtleBorder],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: dynamicIconColor.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 20, color: dynamicIconColor),
+                ),
+                if (!isRead)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: AppTextStyles.cardTitle.copyWith(
+                            fontSize: 14,
+                            fontWeight: isRead ? FontWeight.w600 : FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: badgeBgColor,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              priority,
+                              style: AppTextStyles.badgeText.copyWith(
+                                color: badgeTextColor,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          // Mark as read action di bawah level prioritas High-Low
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!isRead) {
+                                AppDataController.instance.markNotificationAsRead(id);
+                              }
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isRead ? Icons.done_all_rounded : Icons.check_circle_outline_rounded,
+                                    size: 13,
+                                    color: isRead ? AppColors.textMuted : AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isRead ? 'Dibaca' : 'Tandai dibaca',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: isRead ? FontWeight.normal : FontWeight.w600,
+                                      color: isRead ? AppColors.textMuted : AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: AppTextStyles.cardSubtitle.copyWith(height: 1.4),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
