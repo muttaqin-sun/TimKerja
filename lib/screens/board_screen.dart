@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
+import '../services/pdf_report_service.dart';
 import '../theme/app_theme.dart';
 import 'task_detail_screen.dart';
 
@@ -408,22 +409,86 @@ class _BoardScreenState extends State<BoardScreen> {
             ),
             centerTitle: true,
             actions: [
-              IconButton(
+              PopupMenuButton<String>(
                 icon: Icon(
                   Icons.more_horiz_rounded,
                   color: AppColors.textPrimary,
                 ),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        isManager
-                            ? 'Membuka pengaturan Board'
-                            : 'Hanya pengelola yang dapat mengubah pengaturan',
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                color: AppColors.surface,
+                onSelected: (value) async {
+                  if (value == 'download_pdf') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Menyiapkan laporan PDF...'),
+                        duration: Duration(seconds: 1),
                       ),
-                    ),
-                  );
+                    );
+                    try {
+                      await PdfReportService.generateAndPreviewBoardReport(
+                        boardId: widget.boardId,
+                        boardTitle: widget.boardTitle,
+                      );
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Gagal membuat PDF: $e'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    }
+                  } else if (value == 'settings') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          isManager
+                              ? 'Membuka pengaturan Board'
+                              : 'Hanya pengelola yang dapat mengubah pengaturan',
+                        ),
+                      ),
+                    );
+                  }
                 },
+                itemBuilder: (BuildContext context) => [
+                  PopupMenuItem<String>(
+                    value: 'download_pdf',
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Unduh Laporan PDF',
+                          style: AppTextStyles.cardTitle.copyWith(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.settings_outlined,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Pengaturan Board',
+                          style: AppTextStyles.cardSubtitle.copyWith(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

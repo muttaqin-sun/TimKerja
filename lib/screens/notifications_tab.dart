@@ -214,7 +214,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
                                 });
                                 Navigator.pop(context);
                               },
-                              child: const Text('Terapkan'),
+                              child: const Text('Apply'),
                             ),
                           ),
                         ],
@@ -294,10 +294,13 @@ class _NotificationsTabState extends State<NotificationsTab> {
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         onPressed: () {
-                          AppDataController.instance.markAllNotificationsAsRead();
+                          AppDataController.instance
+                              .markAllNotificationsAsRead();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Semua notifikasi ditandai telah dibaca'),
+                              content: Text(
+                                'All notifications are marked as read',
+                              ),
                               duration: Duration(seconds: 2),
                             ),
                           );
@@ -308,7 +311,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
                           color: AppColors.primary,
                         ),
                         label: Text(
-                          'Baca semua',
+                          'read All',
                           style: AppTextStyles.cardSubtitle.copyWith(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w600,
@@ -402,7 +405,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
                     if (displayList.isEmpty) {
                       return Center(
                         child: Text(
-                          'Tidak ada notifikasi sesuai filter',
+                          'There are no notifications according to the filter',
                           style: AppTextStyles.cardSubtitle,
                         ),
                       );
@@ -478,18 +481,18 @@ class _NotificationsTabState extends State<NotificationsTab> {
               borderRadius: BorderRadius.circular(16),
             ),
             title: Text(
-              'Hapus Notifikasi?',
+              'Delete Notifications?',
               style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
             ),
             content: Text(
-              'Apakah Anda yakin ingin menghapus notifikasi ini?',
+              'Are you sure you want to delete this notification?',
               style: AppTextStyles.cardSubtitle,
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text(
-                  'Batal',
+                  'Cancelled',
                   style: TextStyle(
                     color: Colors.grey,
                     fontWeight: FontWeight.bold,
@@ -502,7 +505,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
                 ),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text(
-                  'Hapus',
+                  'Delete',
                   style: TextStyle(color: Colors.white),
                 ),
               ),
@@ -514,7 +517,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
         AppDataController.instance.deleteNotification(id);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Notifikasi telah dihapus'),
+            content: Text('Notification has been deleted'),
             duration: Duration(seconds: 2),
           ),
         );
@@ -537,7 +540,7 @@ class _NotificationsTabState extends State<NotificationsTab> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Hapus',
+              'Delete',
               style: AppTextStyles.cardTitle.copyWith(
                 color: Colors.white,
                 fontSize: 14,
@@ -553,7 +556,9 @@ class _NotificationsTabState extends State<NotificationsTab> {
           color: isRead ? AppColors.surface : AppColors.surface.withAlpha(245),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isRead ? AppColors.borderLight : AppColors.primary.withOpacity(0.35),
+            color: isRead
+                ? AppColors.borderLight
+                : AppColors.primary.withOpacity(0.35),
             width: isRead ? 1.0 : 1.4,
           ),
           boxShadow: const [AppShadows.subtleBorder],
@@ -601,7 +606,9 @@ class _NotificationsTabState extends State<NotificationsTab> {
                           title,
                           style: AppTextStyles.cardTitle.copyWith(
                             fontSize: 14,
-                            fontWeight: isRead ? FontWeight.w600 : FontWeight.bold,
+                            fontWeight: isRead
+                                ? FontWeight.w600
+                                : FontWeight.bold,
                           ),
                         ),
                       ),
@@ -632,7 +639,8 @@ class _NotificationsTabState extends State<NotificationsTab> {
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
                               if (!isRead) {
-                                AppDataController.instance.markNotificationAsRead(id);
+                                AppDataController.instance
+                                    .markNotificationAsRead(id);
                               }
                             },
                             child: Padding(
@@ -641,17 +649,25 @@ class _NotificationsTabState extends State<NotificationsTab> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    isRead ? Icons.done_all_rounded : Icons.check_circle_outline_rounded,
+                                    isRead
+                                        ? Icons.done_all_rounded
+                                        : Icons.check_circle_outline_rounded,
                                     size: 13,
-                                    color: isRead ? AppColors.textMuted : AppColors.primary,
+                                    color: isRead
+                                        ? AppColors.textMuted
+                                        : AppColors.primary,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     isRead ? 'Dibaca' : 'Tandai dibaca',
                                     style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: isRead ? FontWeight.normal : FontWeight.w600,
-                                      color: isRead ? AppColors.textMuted : AppColors.primary,
+                                      fontWeight: isRead
+                                          ? FontWeight.normal
+                                          : FontWeight.w600,
+                                      color: isRead
+                                          ? AppColors.textMuted
+                                          : AppColors.primary,
                                     ),
                                   ),
                                 ],
