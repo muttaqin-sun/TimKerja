@@ -75,11 +75,16 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
         final board = AppDataController.instance.boards.firstWhere(
           (b) => b['id'] == widget.boardId,
           orElse: () => {
+            'id': widget.boardId,
             'title': widget.boardTitle,
             'desc': '',
             'code': '',
+            'privacy': 'Private',
+            'color': 0xFF004D40,
             'lists': <String>[],
             'members': <Map<String, dynamic>>[],
+            'polls': <Map<String, dynamic>>[],
+            'files': <Map<String, dynamic>>[],
           },
         );
 
@@ -539,76 +544,123 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
           ],
         ),
         const SizedBox(height: 14),
-        ...members.map((m) {
-          final colorVal = m['color'] ?? 0xFF0F766E;
-          final String memberName = m['name'] ?? 'Anggota';
-          final bool isOwner = memberName == 'Ilham';
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        if (members.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            margin: const EdgeInsets.only(top: 8),
             decoration: BoxDecoration(
               color: AppColors.surface,
-              borderRadius: AppRadius.roundedMd,
+              borderRadius: AppRadius.roundedLg,
               border: Border.all(color: AppColors.borderLight),
-              boxShadow: const [AppShadows.card],
             ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Color(colorVal),
-                  child: Text(
-                    memberName.isNotEmpty
-                        ? memberName.substring(0, 1).toUpperCase()
-                        : 'U',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+            child: Center(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySurface,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.people_outline_rounded,
+                      size: 36,
+                      color: AppColors.primary,
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        memberName,
-                        style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Belum Ada Anggota',
+                    style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Gunakan tombol Undang di atas atau bagikan kode board untuk menambahkan tim.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...members.map((m) {
+            final colorVal = m['color'] ?? 0xFF0F766E;
+            final String memberName = m['name'] ?? 'Anggota';
+            final String currentUserName =
+                AppDataController.instance.currentUserProfile['name'] ??
+                'Ilham';
+            final bool isOwner =
+                memberName == currentUserName ||
+                memberName == 'Ilham' ||
+                m['role'] == 'Pembuat Board';
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: AppRadius.roundedMd,
+                border: Border.all(color: AppColors.borderLight),
+                boxShadow: const [AppShadows.card],
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Color(colorVal),
+                    child: Text(
+                      memberName.isNotEmpty
+                          ? memberName.substring(0, 1).toUpperCase()
+                          : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
-                      Text(
-                        isOwner ? 'Ketua Proyek' : 'Anggota Tim',
-                        style: AppTextStyles.cardSubtitle.copyWith(
-                          fontSize: 12,
-                          color: isOwner
-                              ? AppColors.primary
-                              : AppColors.textMuted,
-                          fontWeight: isOwner
-                              ? FontWeight.w600
-                              : FontWeight.normal,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          memberName,
+                          style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isManager && !isOwner)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.remove_circle_outline_rounded,
-                      color: AppColors.error,
-                      size: 20,
+                        Text(
+                          isOwner ? 'Ketua Proyek' : 'Anggota Tim',
+                          style: AppTextStyles.cardSubtitle.copyWith(
+                            fontSize: 12,
+                            color: isOwner
+                                ? AppColors.primary
+                                : AppColors.textMuted,
+                            fontWeight: isOwner
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
                     ),
-                    tooltip: 'Keluarkan Anggota',
-                    onPressed: () {
-                      _showRemoveMemberDialog(memberName);
-                    },
                   ),
-              ],
-            ),
-          );
-        }),
+                  if (isManager && !isOwner)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle_outline_rounded,
+                        color: AppColors.error,
+                        size: 20,
+                      ),
+                      tooltip: 'Keluarkan Anggota',
+                      onPressed: () {
+                        _showRemoveMemberDialog(memberName);
+                      },
+                    ),
+                ],
+              ),
+            );
+          }),
       ],
     );
   }
