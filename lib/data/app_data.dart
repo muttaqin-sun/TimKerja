@@ -271,6 +271,25 @@ class AppDataController extends ChangeNotifier {
     return false;
   }
 
+  void updateBoardSettings(
+    String boardId,
+    String newTitle,
+    String newDesc,
+    String newPrivacy,
+  ) {
+    final board = boards.firstWhere(
+      (b) => b['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty) {
+      board['title'] = newTitle;
+      board['desc'] = newDesc;
+      board['privacy'] = newPrivacy;
+      logActivity('Mengubah pengaturan board: "$newTitle"');
+      notifyListeners();
+    }
+  }
+
   void addBoardList(String boardId, String listTitle) {
     final board = boards.firstWhere(
       (b) => b['id'] == boardId,
@@ -374,7 +393,11 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void moveTaskToList(String taskId, String targetListName, {int? targetIndex}) {
+  void moveTaskToList(
+    String taskId,
+    String targetListName, {
+    int? targetIndex,
+  }) {
     final taskIndex = tasks.indexWhere((t) => t['id'] == taskId);
     if (taskIndex != -1) {
       final task = Map<String, dynamic>.from(tasks[taskIndex]);
@@ -388,7 +411,8 @@ class AppDataController extends ChangeNotifier {
         int currentCountInTarget = 0;
         int insertPos = tasks.length;
         for (int i = 0; i < tasks.length; i++) {
-          if (tasks[i]['boardId'] == task['boardId'] && tasks[i]['listName'] == targetListName) {
+          if (tasks[i]['boardId'] == task['boardId'] &&
+              tasks[i]['listName'] == targetListName) {
             if (currentCountInTarget == targetIndex) {
               insertPos = i;
               break;
@@ -508,6 +532,144 @@ class AppDataController extends ChangeNotifier {
     if (task.isNotEmpty) {
       task['coverColor'] = color?.value;
       task['coverSize'] = size;
+      notifyListeners();
+    }
+  }
+
+  void reorderBoardLists(String boardId, int oldIndex, int newIndex) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty) {
+      final List<String> currentLists = List<String>.from(board['lists'] ?? []);
+      if (oldIndex < newIndex) {
+        newIndex -= 1;
+      }
+      final String item = currentLists.removeAt(oldIndex);
+      currentLists.insert(newIndex, item);
+      board['lists'] = currentLists;
+      notifyListeners();
+    }
+  }
+
+  void addPoll(String boardId, String question, List<String> options) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty) {
+      board['polls'] ??= <Map<String, dynamic>>[];
+      (board['polls'] as List).add({
+        'id': 'poll_${DateTime.now().millisecondsSinceEpoch}',
+        'question': question,
+        'creator': currentUserProfile['name'] ?? 'Pengguna',
+        'createdAt': 'Hari ini',
+        'isClosed': false,
+        'options': options.map((opt) => {'text': opt, 'votes': <String>[]}).toList(),
+      });
+      logActivity('Membuat polling baru: "$question"');
+      notifyListeners();
+    }
+  }
+
+  void votePoll(String boardId, String pollId, int optionIndex) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty && board['polls'] != null) {
+      final userName = currentUserProfile['name'] ?? 'Pengguna';
+      for (var poll in (board['polls'] as List)) {
+        if (poll['id'] == pollId && poll['isClosed'] != true) {
+          final options = poll['options'] as List;
+          // Cek apakah user sudah vote opsi lain di poll yang sama, jika ya hilangkan (single choice vote)
+          for (var opt in options) {
+            (opt['votes'] as List).remove(userName);
+          }
+          if (optionIndex >= 0 && optionIndex < options.length) {
+            (options[optionIndex]['votes'] as List).add(userName);
+          }
+          notifyListeners();
+          break;
+        }
+      }
+    }
+  }
+
+  void togglePollStatus(String boardId, String pollId) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty && board['polls'] != null) {
+      for (var poll in (board['polls'] as List)) {
+        if (poll['id'] == pollId) {
+          poll['isClosed'] = !(poll['isClosed'] ?? false);
+          notifyListeners();
+          break;
+        }
+      }
+    }
+  }
+
+  void deletePoll(String boardId, String pollId) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty && board['polls'] != null) {
+      (board['polls'] as List).removeWhere((p) => p['id'] == pollId);
+      notifyListeners();
+    }
+  }
+
+  void updateBoardDetails(String boardId, {String? title, String? desc, int? color, String? privacy}) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty) {
+      if (title != null && title.trim().isNotEmpty) board['title'] = title.trim();
+      if (desc != null) board['desc'] = desc.trim();
+      if (color != null) board['color'] = color;
+      if (privacy != null) board['privacy'] = privacy;
+      logActivity('Memperbarui informasi board "${board['title']}"');
+      notifyListeners();
+    }
+  }
+
+  void addBoardMember(String boardId, String name, {int? color}) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty) {
+      board['members'] ??= <Map<String, dynamic>>[];
+      final List members = board['members'];
+      final bool alreadyExists = members.any((m) => (m['name'] as String).toLowerCase() == name.trim().toLowerCase());
+      if (!alreadyExists && name.trim().isNotEmpty) {
+        final colors = [0xFF0F766E, 0xFF3B82F6, 0xFF10B981, 0xFFF59E0B, 0xFF8B5CF6, 0xFFEF4444];
+        final pickedColor = color ?? colors[members.length % colors.length];
+        members.add({
+          'name': name.trim(),
+          'color': pickedColor,
+        });
+        logActivity('Menambahkan anggota "$name" ke board');
+        notifyListeners();
+      }
+    }
+  }
+
+  void removeBoardMember(String boardId, String memberName) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty && board['members'] != null) {
+      (board['members'] as List).removeWhere((m) => m['name'] == memberName);
+      logActivity('Mengeluarkan anggota "$memberName" dari board');
+      notifyListeners();
+    }
+  }
+
+  void addBoardFile(String boardId, String fileName, String size, {String extension = 'file'}) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty) {
+      board['files'] ??= <Map<String, dynamic>>[];
+      (board['files'] as List).add({
+        'id': 'file_${DateTime.now().millisecondsSinceEpoch}',
+        'name': fileName,
+        'size': size,
+        'uploadedBy': currentUserProfile['name'] ?? 'Pengguna',
+        'uploadedAt': 'Hari ini',
+        'extension': extension,
+      });
+      logActivity('Mengunggah berkas "$fileName" ke board');
+      notifyListeners();
+    }
+  }
+
+  void deleteBoardFile(String boardId, String fileId) {
+    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    if (board.isNotEmpty && board['files'] != null) {
+      (board['files'] as List).removeWhere((f) => f['id'] == fileId);
       notifyListeners();
     }
   }
