@@ -45,10 +45,17 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
     final board = AppDataController.instance.boards.firstWhere(
       (b) => b['id'] == widget.boardId,
       orElse: () => {
+        'id': widget.boardId,
         'title': widget.boardTitle,
         'desc': '',
+        'code': 'KODE-BOARD',
         'privacy': 'Private',
         'color': 0xFF004D40,
+        'lists': <String>[],
+        'lockedLists': <String>[],
+        'members': <Map<String, dynamic>>[],
+        'polls': <Map<String, dynamic>>[],
+        'files': <Map<String, dynamic>>[],
       },
     );
     _titleController = TextEditingController(
@@ -78,10 +85,11 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
             'id': widget.boardId,
             'title': widget.boardTitle,
             'desc': '',
-            'code': '',
+            'code': 'KODE-BOARD',
             'privacy': 'Private',
             'color': 0xFF004D40,
             'lists': <String>[],
+            'lockedLists': <String>[],
             'members': <Map<String, dynamic>>[],
             'polls': <Map<String, dynamic>>[],
             'files': <Map<String, dynamic>>[],
@@ -438,6 +446,43 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
             ),
           ],
         ),
+        const SizedBox(height: 24),
+        if (isManager)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                AppDataController.instance.updateBoardDetails(
+                  widget.boardId,
+                  title: _titleController.text.trim(),
+                  desc: _descController.text.trim(),
+                  privacy: _selectedPrivacy,
+                  color: _selectedColor,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Pengaturan board berhasil disimpan'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+              label: const Text('Simpan Pengaturan'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                textStyle: AppTextStyles.cardTitle.copyWith(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppRadius.roundedMd,
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -590,11 +635,12 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
             final String memberName = m['name'] ?? 'Anggota';
             final String currentUserName =
                 AppDataController.instance.currentUserProfile['name'] ??
-                'Ilham';
-            final bool isOwner =
-                memberName == currentUserName ||
-                memberName == 'Ilham' ||
-                m['role'] == 'Pembuat Board';
+                'Pengguna';
+            final String role = m['role'] ??
+                (isManager && memberName == currentUserName
+                    ? 'Pembuat Board'
+                    : 'Anggota');
+            final bool isOwner = role == 'Pembuat Board';
 
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -909,6 +955,31 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
                     .where((t) => t['listName'] == listTitle)
                     .length;
 
+                IconData listIcon = Icons.view_kanban_outlined;
+                Color listIconColor = AppColors.primary;
+                final lowerTitle = listTitle.toLowerCase();
+                if (isLocked) {
+                  listIcon = Icons.lock_outline_rounded;
+                  listIconColor = AppColors.textMuted;
+                } else if (lowerTitle.contains('selesai') ||
+                    lowerTitle.contains('done')) {
+                  listIcon = Icons.check_circle_outline_rounded;
+                  listIconColor = const Color(0xFF16A34A);
+                } else if (lowerTitle.contains('revisi') ||
+                    lowerTitle.contains('review')) {
+                  listIcon = Icons.rate_review_outlined;
+                  listIconColor = const Color(0xFFF59E0B);
+                } else if (lowerTitle.contains('projek') ||
+                    lowerTitle.contains('progress') ||
+                    lowerTitle.contains('tahap')) {
+                  listIcon = Icons.pending_actions_rounded;
+                  listIconColor = const Color(0xFF0284C7);
+                } else if (lowerTitle.contains('tugas') ||
+                    lowerTitle.contains('todo')) {
+                  listIcon = Icons.assignment_outlined;
+                  listIconColor = const Color(0xFF0F766E);
+                }
+
                 return Container(
                   key: ValueKey('list_$listTitle'),
                   margin: const EdgeInsets.only(bottom: 10),
@@ -928,22 +999,18 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
                   ),
                   child: Row(
                     children: [
-                      // Icon Status Kolom (Terkunci vs Terbuka)
+                      // Icon Status Kolom
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: isLocked
                               ? AppColors.surfaceMuted
-                              : AppColors.primarySurface,
+                              : listIconColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          isLocked
-                              ? Icons.lock_outline_rounded
-                              : Icons.view_kanban_outlined,
-                          color: isLocked
-                              ? AppColors.textMuted
-                              : AppColors.primary,
+                          listIcon,
+                          color: listIconColor,
                           size: 20,
                         ),
                       ),
@@ -1241,17 +1308,20 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
             ),
             ElevatedButton.icon(
               onPressed: () => _showCreatePollDialog(),
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('Buat Polling'),
+              icon: const Icon(Icons.add_rounded, size: 15),
+              label: const Text('Buat'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
+                  horizontal: 12,
+                  vertical: 7,
                 ),
-                textStyle: AppTextStyles.cardTitle.copyWith(fontSize: 13),
+                textStyle: AppTextStyles.cardTitle.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: AppRadius.roundedPill,
                 ),
@@ -1293,6 +1363,23 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
                     'Buat voting baru untuk menyepakati keputusan proyek bersama anggota tim.',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => _showCreatePollDialog(),
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Buat Polling'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppRadius.roundedPill,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1755,6 +1842,23 @@ class _BoardSettingsScreenState extends State<BoardSettingsScreen>
                     'Bagikan dokumen panduan, referensi, atau file aset agar tidak tercecer.',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => _showUploadFileDialog(),
+                    icon: const Icon(Icons.upload_file_rounded, size: 16),
+                    label: const Text('Unggah Berkas'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppRadius.roundedPill,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
                   ),
                 ],
               ),

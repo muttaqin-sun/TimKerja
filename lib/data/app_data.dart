@@ -23,9 +23,39 @@ class AppDataController extends ChangeNotifier {
       'lists': ['Tugas Harian', 'Projek Akhir', 'Revisi'],
       'lockedLists': <String>[],
       'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E},
-        {'name': 'Sari', 'color': 0xFF3B82F6},
-        {'name': 'Budi', 'color': 0xFF10B981},
+        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Pembuat Board'},
+        {'name': 'Sari', 'color': 0xFF3B82F6, 'role': 'Anggota Tim'},
+        {'name': 'Budi', 'color': 0xFF10B981, 'role': 'Anggota Tim'},
+      ],
+      'polls': [
+        {
+          'id': 'p1',
+          'question': 'Pilih jadwal presentasi tugas akhir?',
+          'creator': 'Ilham',
+          'isClosed': false,
+          'options': [
+            {'text': 'Senin, 09:00 WIB', 'votes': ['Ilham']},
+            {'text': 'Rabu, 13:00 WIB', 'votes': ['Sari', 'Budi']},
+          ],
+        },
+      ],
+      'files': [
+        {
+          'id': 'f1',
+          'name': 'Brief-Tugas-Akhir.pdf',
+          'size': '2.4 MB',
+          'uploadedBy': 'Ilham',
+          'uploadedAt': 'Kemarin',
+          'extension': 'pdf',
+        },
+        {
+          'id': 'f2',
+          'name': 'Design-Mockup.fig',
+          'size': '5.1 MB',
+          'uploadedBy': 'Sari',
+          'uploadedAt': '2 hari lalu',
+          'extension': 'fig',
+        },
       ],
     },
     {
