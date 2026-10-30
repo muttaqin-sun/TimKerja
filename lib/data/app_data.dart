@@ -374,6 +374,40 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void moveTaskToList(String taskId, String targetListName, {int? targetIndex}) {
+    final taskIndex = tasks.indexWhere((t) => t['id'] == taskId);
+    if (taskIndex != -1) {
+      final task = Map<String, dynamic>.from(tasks[taskIndex]);
+      final String oldList = task['listName'];
+      task['listName'] = targetListName;
+
+      tasks.removeAt(taskIndex);
+
+      if (targetIndex != null) {
+        // Cari index aktual di list `tasks` global yang sesuai targetIndex di targetListName
+        int currentCountInTarget = 0;
+        int insertPos = tasks.length;
+        for (int i = 0; i < tasks.length; i++) {
+          if (tasks[i]['boardId'] == task['boardId'] && tasks[i]['listName'] == targetListName) {
+            if (currentCountInTarget == targetIndex) {
+              insertPos = i;
+              break;
+            }
+            currentCountInTarget++;
+          }
+        }
+        tasks.insert(insertPos, task);
+      } else {
+        tasks.add(task);
+      }
+
+      if (oldList != targetListName) {
+        logActivity('Memindahkan tugas "${task['title']}" ke $targetListName');
+      }
+      notifyListeners();
+    }
+  }
+
   void addTask(String boardId, String title, String listName) {
     tasks.add({
       'id': 't_${DateTime.now().millisecondsSinceEpoch}',
@@ -476,6 +510,13 @@ class AppDataController extends ChangeNotifier {
       task['coverSize'] = size;
       notifyListeners();
     }
+  }
+
+  void deleteBoard(String boardId) {
+    boards.removeWhere((b) => b['id'] == boardId);
+    tasks.removeWhere((t) => t['boardId'] == boardId);
+    logActivity('Menghapus board proyek');
+    notifyListeners();
   }
 
   void addComment(String taskId, String text) {

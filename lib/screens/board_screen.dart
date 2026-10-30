@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/app_data.dart';
 import '../services/pdf_report_service.dart';
 import '../theme/app_theme.dart';
+import 'board_settings_screen.dart';
 import 'task_detail_screen.dart';
 
 class BoardScreen extends StatefulWidget {
@@ -19,6 +22,77 @@ class BoardScreen extends StatefulWidget {
 }
 
 class _BoardScreenState extends State<BoardScreen> {
+  final ScrollController _horizontalScrollController = ScrollController();
+  Timer? _autoScrollTimer;
+  double _autoScrollSpeed = 0.0;
+  String? _hoveredListName;
+  String? _draggingTaskId;
+
+  @override
+  void dispose() {
+    _stopAutoScroll();
+    _horizontalScrollController.dispose();
+    super.dispose();
+  }
+
+  // Setengah lebar kartu (kartu berukuran 256 px lebar)
+  static const double _cardHalfWidth = 128.0;
+
+  void _handleDragAutoScroll(Offset globalPosition) {
+    if (_draggingTaskId == null) {
+      _stopAutoScroll();
+      return;
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final edgeThreshold = screenWidth * 0.18; // 18 % dari batas kiri & kanan
+
+    final dx = globalPosition.dx;
+    // Hitung batas kiri & kanan visual kartu berdasarkan anchor (tengah kartu)
+    final leftEdge = dx - _cardHalfWidth;
+    final rightEdge = dx + _cardHalfWidth;
+
+    if (leftEdge < edgeThreshold) {
+      // Dekat batas kiri → scroll ke kiri
+      final proximity = (edgeThreshold - leftEdge) / edgeThreshold; // 0‑1
+      _autoScrollSpeed = -((proximity * 14) + 6);
+      _startAutoScroll();
+    } else if (rightEdge > screenWidth - edgeThreshold) {
+      // Dekat batas kanan → scroll ke kanan
+      final proximity = (rightEdge - (screenWidth - edgeThreshold)) / edgeThreshold;
+      _autoScrollSpeed = (proximity * 14) + 6;
+      _startAutoScroll();
+    } else {
+      _stopAutoScroll();
+    }
+  }
+
+  void _startAutoScroll() {
+    if (_autoScrollTimer != null && _autoScrollTimer!.isActive) return;
+
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 20), (timer) {
+      if (!_horizontalScrollController.hasClients || _autoScrollSpeed == 0.0) {
+        _stopAutoScroll();
+        return;
+      }
+
+      final current = _horizontalScrollController.offset;
+      final max = _horizontalScrollController.position.maxScrollExtent;
+      final target = (current + _autoScrollSpeed).clamp(0.0, max);
+
+      if (target != current) {
+        _horizontalScrollController.jumpTo(target);
+      } else {
+        _stopAutoScroll();
+      }
+    });
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+    _autoScrollSpeed = 0.0;
+  }
   // Modal Tambah Task Baru
   void _showAddTaskModal(String listName) {
     final TextEditingController titleCtrl = TextEditingController();
@@ -442,12 +516,12 @@ class _BoardScreenState extends State<BoardScreen> {
                       }
                     }
                   } else if (value == 'settings') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          isManager
-                              ? 'Membuka pengaturan Board'
-                              : 'Hanya pengelola yang dapat mengubah pengaturan',
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => BoardSettingsScreen(
+                          boardId: widget.boardId,
+                          boardTitle: widget.boardTitle,
                         ),
                       ),
                     );
@@ -642,34 +716,46 @@ class _BoardScreenState extends State<BoardScreen> {
               const SizedBox(height: 24),
 
               Expanded(
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    bottom: 20,
-                  ),
-                  itemCount: isManager
-                      ? boardLists.length + 1
-                      : boardLists.length,
-                  itemBuilder: (context, index) {
-                    if (index < boardLists.length) {
-                      final listTitle = boardLists[index];
-                      final listTasks = boardTasks
-                          .where((t) => t['listName'] == listTitle)
-                          .toList();
-                      final isLocked = lockedLists.contains(listTitle);
+                child: DragTarget<Map<String, dynamic>>(
+                  onWillAcceptWithDetails: (details) => true,
+                  onMove: (details) {
+                    _handleDragAutoScroll(details.offset);
+                  },
+                  onLeave: (data) {
+                    _stopAutoScroll();
+                  },
+                  builder: (context, candidateData, rejectedData) {
+                    return ListView.builder(
+                      controller: _horizontalScrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        bottom: 20,
+                      ),
+                      itemCount: isManager
+                          ? boardLists.length + 1
+                          : boardLists.length,
+                      itemBuilder: (context, index) {
+                        if (index < boardLists.length) {
+                          final listTitle = boardLists[index];
+                          final listTasks = boardTasks
+                              .where((t) => t['listName'] == listTitle)
+                              .toList();
+                          final isLocked = lockedLists.contains(listTitle);
 
-                      return _buildKanbanColumn(
-                        listTitle,
-                        listTasks,
-                        isManager,
-                        isLocked,
-                      );
-                    } else {
-                      return _buildAddListCard();
-                    }
+                          return _buildKanbanColumn(
+                            listTitle,
+                            listTasks,
+                            isManager,
+                            isLocked,
+                          );
+                        } else {
+                          return _buildAddListCard();
+                        }
+                      },
+                    );
                   },
                 ),
               ),
@@ -687,131 +773,246 @@ class _BoardScreenState extends State<BoardScreen> {
     bool isLocked,
   ) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    return Container(
-      width: 280,
-      margin: EdgeInsets.only(
-        right: 16,
-        bottom: bottomPadding > 0 ? bottomPadding : 12,
-      ),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.surfaceMuted.withOpacity(0.5),
-            borderRadius: AppRadius.roundedLg,
+    final bool isHovered = _hoveredListName == title;
+
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) {
+        if (isLocked) return false;
+        return true;
+      },
+      onAcceptWithDetails: (details) {
+        _stopAutoScroll();
+        setState(() {
+          _hoveredListName = null;
+        });
+        final task = details.data;
+        if (task['listName'] != title) {
+          HapticFeedback.mediumImpact();
+          AppDataController.instance.moveTaskToList(task['id'], title);
+        }
+      },
+      onMove: (details) {
+        _handleDragAutoScroll(details.offset);
+        if (!isLocked && _hoveredListName != title) {
+          setState(() {
+            _hoveredListName = title;
+          });
+        }
+      },
+      onLeave: (data) {
+        if (_hoveredListName == title) {
+          setState(() {
+            _hoveredListName = null;
+          });
+        }
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Container(
+          width: 280,
+          margin: EdgeInsets.only(
+            right: 16,
+            bottom: bottomPadding > 0 ? bottomPadding : 12,
           ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        title,
-                        style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                      ),
-                      if (isLocked) ...[
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.lock_rounded,
-                          size: 14,
-                          color: AppColors.textMuted,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              decoration: BoxDecoration(
+                color: isHovered
+                    ? AppColors.primary.withOpacity(0.08)
+                    : AppColors.surfaceMuted.withOpacity(0.5),
+                borderRadius: AppRadius.roundedLg,
+                border: Border.all(
+                  color: isHovered
+                      ? AppColors.primary
+                      : AppColors.borderLight.withOpacity(0.4),
+                  width: isHovered ? 1.8 : 1.0,
+                ),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              title,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                fontSize: 15,
+                                color: isHovered
+                                    ? AppColors.primary
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                            if (isLocked) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.lock_rounded,
+                                size: 14,
+                                color: AppColors.textMuted,
+                              ),
+                            ],
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isHovered
+                                    ? AppColors.primary.withOpacity(0.15)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${tasks.length}',
+                                style: AppTextStyles.cardSubtitle.copyWith(
+                                  fontWeight: isHovered
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isHovered
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () => _showListOptionsModal(
+                                context,
+                                title,
+                                isManager,
+                                isLocked,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: Icon(
+                                  Icons.more_horiz_rounded,
+                                  color: AppColors.textMuted,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Text(
-                        '${tasks.length}',
-                        style: AppTextStyles.cardSubtitle,
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _showListOptionsModal(
-                          context,
-                          title,
-                          isManager,
-                          isLocked,
-                        ),
-                        borderRadius: BorderRadius.circular(4),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4.0),
-                          child: Icon(
-                            Icons.more_horiz_rounded,
-                            color: AppColors.textMuted,
-                            size: 20,
+                    ),
+                    const SizedBox(height: 12),
+                    if (tasks.isEmpty && !isHovered)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16.0),
+                        child: Center(
+                          child: Text(
+                            'Belum ada task',
+                            style: AppTextStyles.cardSubtitle.copyWith(
+                              fontSize: 12,
+                            ),
                           ),
                         ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: tasks.length,
+                          itemBuilder: (context, index) =>
+                              _buildTaskCard(tasks[index], isLocked),
+                        ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (tasks.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: Center(
-                    child: Text(
-                      'Belum ada task',
-                      style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
-                    ),
-                  ),
-                )
-              else
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: tasks.length,
-                    itemBuilder: (context, index) =>
-                        _buildTaskCard(tasks[index]),
-                  ),
-                ),
-              const SizedBox(height: 8),
 
-              // Tombol Tambah Task (Merespon Status Kunci)
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    if (isLocked) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Kolom ini dikunci. Anda tidak bisa menambahkan task baru.',
+                    // Placeholder saat task melayang masuk ke list ini
+                    if (isHovered && _draggingTaskId != null)
+                      Container(
+                        height: 48,
+                        margin: const EdgeInsets.only(bottom: 10, top: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: AppRadius.roundedMd,
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.5),
+                            width: 1.5,
+                            style: BorderStyle.solid,
                           ),
                         ),
-                      );
-                    } else {
-                      _showAddTaskModal(title);
-                    }
-                  },
-                  style: TextButton.styleFrom(
-                    backgroundColor: AppColors.surface,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: AppRadius.roundedMd,
+                        child: Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.arrow_downward_rounded,
+                                size: 16,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Lepas untuk memindahkan ke sini',
+                                style: AppTextStyles.cardSubtitle.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 8),
+
+                    // Tombol Tambah Task (Merespon Status Kunci)
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () {
+                          if (isLocked) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Kolom ini dikunci. Anda tidak bisa menambahkan task baru.',
+                                ),
+                              ),
+                            );
+                          } else {
+                            _showAddTaskModal(title);
+                          }
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: AppColors.surface,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppRadius.roundedMd,
+                          ),
+                        ),
+                        child: Text(
+                          '+ Tambah Task',
+                          style: AppTextStyles.cardSubtitle.copyWith(
+                            color: isLocked
+                                ? AppColors.textMuted.withOpacity(0.5)
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    '+ Tambah Task',
-                    style: AppTextStyles.cardSubtitle.copyWith(
-                      color: isLocked
-                          ? AppColors.textMuted.withOpacity(0.5)
-                          : AppColors.textPrimary,
-                    ),
-                  ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -852,7 +1053,7 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  Widget _buildTaskCard(Map<String, dynamic> task) {
+  Widget _buildTaskCard(Map<String, dynamic> task, bool isLocked) {
     final bool isCompleted = task['isDone'] ?? false;
     final int? coverColorVal = task['coverColor'];
     final String coverSize = task['coverSize'] ?? 'header';
@@ -860,31 +1061,37 @@ class _BoardScreenState extends State<BoardScreen> {
         ? Color(coverColorVal)
         : null;
 
-    // Ambil data members dari task
     final List<dynamic> members = task['members'] ?? [];
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TaskDetailScreen(taskId: task['id']),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+    Widget cardContent({bool isDragging = false, bool isFeedback = false}) {
+      return Container(
+        width: 256,
+        margin: EdgeInsets.only(bottom: isFeedback ? 0 : 10),
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: coverSize == 'full' && coverColor != null
               ? coverColor
               : AppColors.surface,
           borderRadius: AppRadius.roundedMd,
-          border: Border.all(color: AppColors.borderLight),
-          boxShadow: const [AppShadows.card],
+          border: Border.all(
+            color: isFeedback
+                ? AppColors.primary
+                : AppColors.borderLight,
+            width: isFeedback ? 1.5 : 1.0,
+          ),
+          boxShadow: isFeedback
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
+                  )
+                ]
+              : const [AppShadows.card],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // MENAMPILKAN COVER JIKA ADA
             if (coverColor != null && coverSize == 'header')
@@ -894,6 +1101,7 @@ class _BoardScreenState extends State<BoardScreen> {
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1016,7 +1224,76 @@ class _BoardScreenState extends State<BoardScreen> {
             ),
           ],
         ),
+      );
+    }
+
+    final taskCard = GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskDetailScreen(taskId: task['id']),
+          ),
+        );
+      },
+      child: cardContent(),
+    );
+
+    if (isLocked) {
+      return taskCard;
+    }
+
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: task,
+      dragAnchorStrategy: childDragAnchorStrategy,
+      hapticFeedbackOnStart: true,
+      onDragStarted: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _draggingTaskId = task['id'];
+        });
+      },
+      onDragEnd: (details) {
+        _stopAutoScroll();
+        setState(() {
+          _draggingTaskId = null;
+          _hoveredListName = null;
+        });
+      },
+      onDraggableCanceled: (velocity, offset) {
+        _stopAutoScroll();
+        setState(() {
+          _draggingTaskId = null;
+          _hoveredListName = null;
+        });
+      },
+      // Widget saat di tempat asal ketika sedang di-drag (placeholder transparan & mengecil)
+      childWhenDragging: Opacity(
+        opacity: 0.35,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: AppRadius.roundedMd,
+            border: Border.all(
+              color: AppColors.primary.withOpacity(0.5),
+              width: 1.5,
+            ),
+          ),
+          child: cardContent(),
+        ),
       ),
+      // Widget feedback yang melayang mengikuti kursor/jari (mengecil 0.93 & melayang dengan shadow)
+      feedback: Material(
+        color: Colors.transparent,
+        child: Transform.scale(
+          scale: 0.93,
+          child: Opacity(
+            opacity: 0.96,
+            child: cardContent(isFeedback: true),
+          ),
+        ),
+      ),
+      child: taskCard,
     );
   }
 
