@@ -37,6 +37,7 @@ class PdfReportService {
     final List<String> boardLists = List<String>.from(board['lists'] ?? []);
     final List<Map<String, dynamic>> boardTasks = AppDataController.instance.tasks
         .where((t) => t['boardId'] == boardId)
+      .cast<Map<String, dynamic>>()
         .toList();
 
     final String leaderName = AppDataController.instance.currentUserProfile['name'] ?? 'Ketua Pelaksana';

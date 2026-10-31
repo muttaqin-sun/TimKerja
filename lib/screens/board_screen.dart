@@ -1,11 +1,12 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/app_data.dart';
 import '../services/pdf_report_service.dart';
 import '../theme/app_theme.dart';
-import 'board_settings_screen.dart';
+import 'board_settings/board_settings_screen.dart';
 import 'task_detail_screen.dart';
 
 class BoardScreen extends StatefulWidget {
@@ -59,7 +60,8 @@ class _BoardScreenState extends State<BoardScreen> {
       _startAutoScroll();
     } else if (rightEdge > screenWidth - edgeThreshold) {
       // Dekat batas kanan → scroll ke kanan
-      final proximity = (rightEdge - (screenWidth - edgeThreshold)) / edgeThreshold;
+      final proximity =
+          (rightEdge - (screenWidth - edgeThreshold)) / edgeThreshold;
       _autoScrollSpeed = (proximity * 14) + 6;
       _startAutoScroll();
     } else {
@@ -70,7 +72,9 @@ class _BoardScreenState extends State<BoardScreen> {
   void _startAutoScroll() {
     if (_autoScrollTimer != null && _autoScrollTimer!.isActive) return;
 
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 20), (timer) {
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 20), (
+      timer,
+    ) {
       if (!_horizontalScrollController.hasClients || _autoScrollSpeed == 0.0) {
         _stopAutoScroll();
         return;
@@ -93,6 +97,7 @@ class _BoardScreenState extends State<BoardScreen> {
     _autoScrollTimer = null;
     _autoScrollSpeed = 0.0;
   }
+
   // Modal Tambah Task Baru
   void _showAddTaskModal(String listName) {
     final TextEditingController titleCtrl = TextEditingController();
@@ -460,8 +465,13 @@ class _BoardScreenState extends State<BoardScreen> {
           board['lockedLists'] ?? [],
         );
 
-        final boardTasks = AppDataController.instance.tasks
+        final List<Map<String, dynamic>> boardTasks = AppDataController
+            .instance
+            .tasks
             .where((t) => t['boardId'] == widget.boardId)
+            .map<Map<String, dynamic>>(
+              (task) => Map<String, dynamic>.from(task),
+            )
             .toList();
 
         return Scaffold(
@@ -552,12 +562,12 @@ class _BoardScreenState extends State<BoardScreen> {
                         Icon(
                           Icons.settings_outlined,
                           size: 18,
-                          color: AppColors.textSecondary,
+                          color: AppColors.textPrimary,
                         ),
                         const SizedBox(width: 10),
                         Text(
                           'Pengaturan Board',
-                          style: AppTextStyles.cardSubtitle.copyWith(fontSize: 13),
+                          style: AppTextStyles.cardTitle.copyWith(fontSize: 13),
                         ),
                       ],
                     ),
@@ -1074,9 +1084,7 @@ class _BoardScreenState extends State<BoardScreen> {
               : AppColors.surface,
           borderRadius: AppRadius.roundedMd,
           border: Border.all(
-            color: isFeedback
-                ? AppColors.primary
-                : AppColors.borderLight,
+            color: isFeedback ? AppColors.primary : AppColors.borderLight,
             width: isFeedback ? 1.5 : 1.0,
           ),
           boxShadow: isFeedback
@@ -1085,7 +1093,7 @@ class _BoardScreenState extends State<BoardScreen> {
                     color: Colors.black.withOpacity(0.18),
                     blurRadius: 18,
                     offset: const Offset(0, 10),
-                  )
+                  ),
                 ]
               : const [AppShadows.card],
         ),
@@ -1287,10 +1295,7 @@ class _BoardScreenState extends State<BoardScreen> {
         color: Colors.transparent,
         child: Transform.scale(
           scale: 0.93,
-          child: Opacity(
-            opacity: 0.96,
-            child: cardContent(isFeedback: true),
-          ),
+          child: Opacity(opacity: 0.96, child: cardContent(isFeedback: true)),
         ),
       ),
       child: taskCard,

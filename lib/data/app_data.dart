@@ -5,14 +5,14 @@ class AppDataController extends ChangeNotifier {
   AppDataController._internal();
 
   String currentUserRole = 'Pembuat Board';
-  Map<String, dynamic> currentUserProfile = {
+  Map currentUserProfile = {
     'name': 'Ilham',
     'email': 'ilham@student.ac.id',
     'initials': 'IM',
     'avatarColor': 0xFF0F766E,
   };
 
-  List<Map<String, dynamic>> boards = [
+  List boards = [
     {
       'id': 'b1',
       'title': 'Kuliah - TI',
@@ -21,11 +21,11 @@ class AppDataController extends ChangeNotifier {
       'privacy': 'Private',
       'code': 'KULIAH-TI-8X2P',
       'lists': ['Tugas Harian', 'Projek Akhir', 'Revisi'],
-      'lockedLists': <String>[],
+      'lockedLists': [],
       'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Pembuat Board'},
-        {'name': 'Sari', 'color': 0xFF3B82F6, 'role': 'Anggota Tim'},
-        {'name': 'Budi', 'color': 0xFF10B981, 'role': 'Anggota Tim'},
+        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Admin'},
+        {'name': 'Sari', 'color': 0xFF3B82F6, 'role': 'Anggota'},
+        {'name': 'Budi', 'color': 0xFF10B981, 'role': 'Anggota'},
       ],
       'polls': [
         {
@@ -34,8 +34,14 @@ class AppDataController extends ChangeNotifier {
           'creator': 'Ilham',
           'isClosed': false,
           'options': [
-            {'text': 'Senin, 09:00 WIB', 'votes': ['Ilham']},
-            {'text': 'Rabu, 13:00 WIB', 'votes': ['Sari', 'Budi']},
+            {
+              'text': 'Senin, 09:00 WIB',
+              'votes': ['Ilham'],
+            },
+            {
+              'text': 'Rabu, 13:00 WIB',
+              'votes': ['Sari', 'Budi'],
+            },
           ],
         },
       ],
@@ -66,15 +72,17 @@ class AppDataController extends ChangeNotifier {
       'privacy': 'Workspace',
       'code': 'PROJ-A-9Y3Q',
       'lists': ['Tahap 1', 'Tahap 2', 'Selesai'],
-      'lockedLists': <String>['Selesai'],
+      'lockedLists': ['Selesai'],
       'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E},
-        {'name': 'Andi', 'color': 0xFFF59E0B},
+        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Admin'},
+        {'name': 'Andi', 'color': 0xFFF59E0B, 'role': 'Anggota'},
       ],
+      'polls': [],
+      'files': [],
     },
   ];
 
-  List<Map<String, dynamic>> tasks = [
+  List tasks = [
     {
       'id': 't1',
       'boardId': 'b1',
@@ -132,16 +140,16 @@ class AppDataController extends ChangeNotifier {
       'dueTime': null,
       'reminder': '1 hari sebelumnya',
       'addMeToCard': false,
-      'subtasks': <Map<String, dynamic>>[],
-      'comments': <Map<String, dynamic>>[],
-      'attachments': <Map<String, dynamic>>[],
+      'subtasks': [],
+      'comments': [],
+      'attachments': [],
       'members': [
         {'name': 'Ilham', 'color': 0xFF0F766E},
       ],
     },
   ];
 
-  List<Map<String, dynamic>> notifications = [
+  List notifications = [
     {
       'id': 'n1',
       'icon': Icons.error_outline_rounded,
@@ -177,26 +185,20 @@ class AppDataController extends ChangeNotifier {
     },
   ];
 
-  List<Map<String, dynamic>> recentActivities = [
+  List recentActivities = [
     {'id': 'a1', 'title': 'Andi assigned you to Tugas UI/UX', 'time': '2h ago'},
     {'id': 'a2', 'title': 'Sari commented on Project A', 'time': '4h ago'},
   ];
 
-  // Getter Cerdas untuk Today's Tasks
-  List<Map<String, dynamic>> get todayTasks {
-    return tasks
-        .where(
-          (t) =>
-              t['date'] == 'Today' ||
-              t['dueDate'] == 'Hari ini' ||
-              t['dueDate'] == 'Today',
-        )
-        .toList();
+  List get todayTasks {
+    return tasks.where((t) {
+      final taskMap = t as Map;
+      return taskMap['date'] == 'Today' ||
+          taskMap['dueDate'] == 'Hari ini' ||
+          taskMap['dueDate'] == 'Today';
+    }).toList();
   }
 
-  // ==========================================
-  // FITUR BARU: AUTO LOG RECENT ACTIVITY
-  // ==========================================
   void logActivity(String title) {
     recentActivities.insert(0, {
       'id': 'act_${DateTime.now().millisecondsSinceEpoch}',
@@ -204,20 +206,17 @@ class AppDataController extends ChangeNotifier {
       'time': 'Baru saja',
     });
     if (recentActivities.length > 10) {
-      recentActivities.removeLast(); // Maksimal 10 log tersimpan
+      recentActivities.removeLast();
     }
     notifyListeners();
   }
 
-  // ==========================================
-  // FITUR BARU: CRUD NOTIFICATIONS
-  // ==========================================
   void markNotificationAsRead(String notifId) {
     final notif = notifications.firstWhere(
-      (n) => n['id'] == notifId,
+      (n) => (n as Map)['id'] == notifId,
       orElse: () => {},
     );
-    if (notif.isNotEmpty && notif['isRead'] == false) {
+    if (notif.isNotEmpty && (notif as Map)['isRead'] == false) {
       notif['isRead'] = true;
       notifyListeners();
     }
@@ -226,8 +225,9 @@ class AppDataController extends ChangeNotifier {
   void markAllNotificationsAsRead() {
     bool isChanged = false;
     for (var notif in notifications) {
-      if (notif['isRead'] == false) {
-        notif['isRead'] = true;
+      final notifMap = notif as Map;
+      if (notifMap['isRead'] == false) {
+        notifMap['isRead'] = true;
         isChanged = true;
       }
     }
@@ -235,24 +235,19 @@ class AppDataController extends ChangeNotifier {
   }
 
   void deleteNotification(String notifId) {
-    notifications.removeWhere((n) => n['id'] == notifId);
+    notifications.removeWhere((n) => (n as Map)['id'] == notifId);
     notifyListeners();
   }
-
-  // ==========================================
-  // METHODS LAINNYA
-  // ==========================================
 
   void addBoard(
     String title,
     String desc,
     dynamic color,
     String privacy, {
-    List<String>? initialLists,
+    List? initialLists,
   }) {
-    String generateCode() {
-      return 'BRD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
-    }
+    String generateCode() =>
+        'BRD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
     boards.add({
       'id': 'b_${DateTime.now().millisecondsSinceEpoch}',
@@ -261,39 +256,42 @@ class AppDataController extends ChangeNotifier {
       'color': color is Color ? color.value : color,
       'privacy': privacy,
       'code': generateCode(),
-      'lists': initialLists ?? <String>[],
-      'lockedLists': <String>[],
+      'lists': initialLists ?? [],
+      'lockedLists': [],
       'members': [
         {
           'name': currentUserProfile['name'],
           'color': currentUserProfile['avatarColor'],
+          'role': 'Admin',
         },
       ],
+      'polls': [],
+      'files': [],
     });
 
-    logActivity('Membuat board baru: "$title"'); // Auto Log
+    logActivity('Membuat board baru: "$title"');
     notifyListeners();
   }
 
   bool joinBoardByCode(String code) {
     final boardIndex = boards.indexWhere(
-      (b) => b['code'] == code.trim().toUpperCase(),
+      (b) => (b as Map)['code'] == code.trim().toUpperCase(),
     );
     if (boardIndex != -1) {
-      final board = boards[boardIndex];
-      List<dynamic> members = List.from(board['members'] ?? []);
+      final board = boards[boardIndex] as Map;
+      List members = List.from(board['members'] ?? []);
       bool alreadyJoined = members.any(
-        (m) => m['name'] == currentUserProfile['name'],
+        (m) => (m as Map)['name'] == currentUserProfile['name'],
       );
 
       if (!alreadyJoined) {
         members.add({
           'name': currentUserProfile['name'],
           'color': currentUserProfile['avatarColor'],
+          'role': 'Anggota',
         });
         board['members'] = members;
-
-        logActivity('Bergabung ke board: "${board['title']}"'); // Auto Log
+        logActivity('Bergabung ke board: "${board['title']}"');
         notifyListeners();
         return true;
       }
@@ -308,13 +306,14 @@ class AppDataController extends ChangeNotifier {
     String newPrivacy,
   ) {
     final board = boards.firstWhere(
-      (b) => b['id'] == boardId,
+      (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
-      board['title'] = newTitle;
-      board['desc'] = newDesc;
-      board['privacy'] = newPrivacy;
+      final boardMap = board as Map;
+      boardMap['title'] = newTitle;
+      boardMap['desc'] = newDesc;
+      boardMap['privacy'] = newPrivacy;
       logActivity('Mengubah pengaturan board: "$newTitle"');
       notifyListeners();
     }
@@ -322,14 +321,15 @@ class AppDataController extends ChangeNotifier {
 
   void addBoardList(String boardId, String listTitle) {
     final board = boards.firstWhere(
-      (b) => b['id'] == boardId,
+      (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
-      final List<String> currentLists = List<String>.from(board['lists'] ?? []);
+      final boardMap = board as Map;
+      final List currentLists = List.from(boardMap['lists'] ?? []);
       if (!currentLists.contains(listTitle)) {
         currentLists.add(listTitle);
-        board['lists'] = currentLists;
+        boardMap['lists'] = currentLists;
         notifyListeners();
       }
     }
@@ -337,28 +337,30 @@ class AppDataController extends ChangeNotifier {
 
   void renameBoardList(String boardId, String oldName, String newName) {
     final board = boards.firstWhere(
-      (b) => b['id'] == boardId,
+      (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
-      final List<String> currentLists = List<String>.from(board['lists'] ?? []);
+      final boardMap = board as Map;
+      final List currentLists = List.from(boardMap['lists'] ?? []);
       final int index = currentLists.indexOf(oldName);
 
       if (index != -1 &&
           !currentLists.contains(newName) &&
           newName.isNotEmpty) {
         currentLists[index] = newName;
-        board['lists'] = currentLists;
-        board['lockedLists'] ??= <String>[];
-        List<String> lockedLists = List<String>.from(board['lockedLists']);
+        boardMap['lists'] = currentLists;
+        boardMap['lockedLists'] ??= [];
+        List lockedLists = List.from(boardMap['lockedLists']);
         if (lockedLists.contains(oldName)) {
           lockedLists.remove(oldName);
           lockedLists.add(newName);
-          board['lockedLists'] = lockedLists;
+          boardMap['lockedLists'] = lockedLists;
         }
         for (var task in tasks) {
-          if (task['boardId'] == boardId && task['listName'] == oldName) {
-            task['listName'] = newName;
+          final taskMap = task as Map;
+          if (taskMap['boardId'] == boardId && taskMap['listName'] == oldName) {
+            taskMap['listName'] = newName;
           }
         }
         notifyListeners();
@@ -368,19 +370,20 @@ class AppDataController extends ChangeNotifier {
 
   void deleteBoardList(String boardId, String listName) {
     final board = boards.firstWhere(
-      (b) => b['id'] == boardId,
+      (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
-      final List<String> currentLists = List<String>.from(board['lists'] ?? []);
+      final boardMap = board as Map;
+      final List currentLists = List.from(boardMap['lists'] ?? []);
       currentLists.remove(listName);
-      board['lists'] = currentLists;
-      board['lockedLists'] ??= <String>[];
-      List<String> lockedLists = List<String>.from(board['lockedLists']);
+      boardMap['lists'] = currentLists;
+      boardMap['lockedLists'] ??= [];
+      List lockedLists = List.from(boardMap['lockedLists']);
       lockedLists.remove(listName);
-      board['lockedLists'] = lockedLists;
+      boardMap['lockedLists'] = lockedLists;
       tasks.removeWhere(
-        (t) => t['boardId'] == boardId && t['listName'] == listName,
+        (t) => (t as Map)['boardId'] == boardId && t['listName'] == listName,
       );
       notifyListeners();
     }
@@ -388,36 +391,41 @@ class AppDataController extends ChangeNotifier {
 
   void toggleListLock(String boardId, String listName) {
     final board = boards.firstWhere(
-      (b) => b['id'] == boardId,
+      (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
-      board['lockedLists'] ??= <String>[];
-      List<String> lockedLists = List<String>.from(board['lockedLists']);
+      final boardMap = board as Map;
+      boardMap['lockedLists'] ??= [];
+      List lockedLists = List.from(boardMap['lockedLists']);
       if (lockedLists.contains(listName)) {
         lockedLists.remove(listName);
       } else {
         lockedLists.add(listName);
       }
-      board['lockedLists'] = lockedLists;
+      boardMap['lockedLists'] = lockedLists;
       notifyListeners();
     }
   }
 
   void sortTasksByStatus(String boardId, String listName) {
-    List<Map<String, dynamic>> targetTasks = tasks
-        .where((t) => t['boardId'] == boardId && t['listName'] == listName)
+    List targetTasks = tasks
+        .where(
+          (t) => (t as Map)['boardId'] == boardId && t['listName'] == listName,
+        )
         .toList();
     targetTasks.sort((a, b) {
-      bool aDone = a['isDone'] ?? false;
-      bool bDone = b['isDone'] ?? false;
+      final aMap = a as Map;
+      final bMap = b as Map;
+      bool aDone = aMap['isDone'] ?? false;
+      bool bDone = bMap['isDone'] ?? false;
       if (aDone != bDone) return aDone ? 1 : -1;
-      String aTitle = a['title'] ?? '';
-      String bTitle = b['title'] ?? '';
+      String aTitle = aMap['title'] ?? '';
+      String bTitle = bMap['title'] ?? '';
       return aTitle.toLowerCase().compareTo(bTitle.toLowerCase());
     });
     tasks.removeWhere(
-      (t) => t['boardId'] == boardId && t['listName'] == listName,
+      (t) => (t as Map)['boardId'] == boardId && t['listName'] == listName,
     );
     tasks.addAll(targetTasks);
     notifyListeners();
@@ -428,21 +436,20 @@ class AppDataController extends ChangeNotifier {
     String targetListName, {
     int? targetIndex,
   }) {
-    final taskIndex = tasks.indexWhere((t) => t['id'] == taskId);
+    final taskIndex = tasks.indexWhere((t) => (t as Map)['id'] == taskId);
     if (taskIndex != -1) {
-      final task = Map<String, dynamic>.from(tasks[taskIndex]);
+      final task = Map.from(tasks[taskIndex] as Map);
       final String oldList = task['listName'];
       task['listName'] = targetListName;
-
       tasks.removeAt(taskIndex);
 
       if (targetIndex != null) {
-        // Cari index aktual di list `tasks` global yang sesuai targetIndex di targetListName
         int currentCountInTarget = 0;
         int insertPos = tasks.length;
         for (int i = 0; i < tasks.length; i++) {
-          if (tasks[i]['boardId'] == task['boardId'] &&
-              tasks[i]['listName'] == targetListName) {
+          final tMap = tasks[i] as Map;
+          if (tMap['boardId'] == task['boardId'] &&
+              tMap['listName'] == targetListName) {
             if (currentCountInTarget == targetIndex) {
               insertPos = i;
               break;
@@ -454,7 +461,6 @@ class AppDataController extends ChangeNotifier {
       } else {
         tasks.add(task);
       }
-
       if (oldList != targetListName) {
         logActivity('Memindahkan tugas "${task['title']}" ke $targetListName');
       }
@@ -481,49 +487,55 @@ class AppDataController extends ChangeNotifier {
       'dueTime': null,
       'reminder': '1 hari sebelumnya',
       'addMeToCard': false,
-      'subtasks': <Map<String, dynamic>>[],
-      'comments': <Map<String, dynamic>>[],
-      'attachments': <Map<String, dynamic>>[],
-      'members': <Map<String, dynamic>>[],
+      'subtasks': [],
+      'comments': [],
+      'attachments': [],
+      'members': [],
     });
-
-    logActivity('Menambahkan tugas: "$title"'); // Auto Log
+    logActivity('Menambahkan tugas: "$title"');
     notifyListeners();
   }
 
   void updateTaskDesc(String taskId, String newDesc) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      task['desc'] = newDesc;
+      (task as Map)['desc'] = newDesc;
       notifyListeners();
     }
   }
 
   void toggleTaskCompletion(String taskId) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      bool currentVal = task['isDone'] as bool;
-      task['isDone'] = !currentVal;
-      task['status'] = task['isDone'] ? 'Done' : 'To Do';
-
-      // Auto Log
+      final taskMap = task as Map;
+      bool currentVal = taskMap['isDone'] as bool;
+      taskMap['isDone'] = !currentVal;
+      taskMap['status'] = taskMap['isDone'] ? 'Done' : 'To Do';
       logActivity(
-        task['isDone']
-            ? 'Menyelesaikan tugas: "${task['title']}"'
-            : 'Membuka kembali tugas: "${task['title']}"',
+        taskMap['isDone']
+            ? 'Menyelesaikan tugas: "${taskMap['title']}"'
+            : 'Membuka kembali tugas: "${taskMap['title']}"',
       );
       notifyListeners();
     }
   }
 
-  void _updateTaskStatus(Map<String, dynamic> task) {
+  void _updateTaskStatus(Map task) {
     final subtasks = task['subtasks'] as List;
     if (subtasks.isEmpty) {
       task['status'] = 'To Do';
       task['isDone'] = false;
       return;
     }
-    final completedCount = subtasks.where((s) => s['isDone'] == true).length;
+    final completedCount = subtasks
+        .where((s) => (s as Map)['isDone'] == true)
+        .length;
     if (completedCount == 0) {
       task['status'] = 'To Do';
       task['isDone'] = false;
@@ -537,60 +549,81 @@ class AppDataController extends ChangeNotifier {
   }
 
   void addSubtask(String taskId, String title) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      (task['subtasks'] as List).add({'title': title, 'isDone': false});
-      _updateTaskStatus(task);
+      final taskMap = task as Map;
+      (taskMap['subtasks'] as List).add({'title': title, 'isDone': false});
+      _updateTaskStatus(taskMap);
       notifyListeners();
     }
   }
 
   void toggleSubtask(String taskId, int index) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      final subtasks = task['subtasks'] as List;
+      final taskMap = task as Map;
+      final subtasks = taskMap['subtasks'] as List;
       if (index >= 0 && index < subtasks.length) {
-        subtasks[index]['isDone'] = !subtasks[index]['isDone'];
-        _updateTaskStatus(task);
+        final subtaskMap = subtasks[index] as Map;
+        subtaskMap['isDone'] = !subtaskMap['isDone'];
+        _updateTaskStatus(taskMap);
         notifyListeners();
       }
     }
   }
 
   void setTaskCover(String taskId, Color? color, {String size = 'header'}) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      task['coverColor'] = color?.value;
-      task['coverSize'] = size;
+      final taskMap = task as Map;
+      taskMap['coverColor'] = color?.value;
+      taskMap['coverSize'] = size;
       notifyListeners();
     }
   }
 
   void reorderBoardLists(String boardId, int oldIndex, int newIndex) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
     if (board.isNotEmpty) {
-      final List<String> currentLists = List<String>.from(board['lists'] ?? []);
+      final boardMap = board as Map;
+      final List currentLists = List.from(boardMap['lists'] ?? []);
       if (oldIndex < newIndex) {
         newIndex -= 1;
       }
-      final String item = currentLists.removeAt(oldIndex);
+      final item = currentLists.removeAt(oldIndex);
       currentLists.insert(newIndex, item);
-      board['lists'] = currentLists;
+      boardMap['lists'] = currentLists;
       notifyListeners();
     }
   }
 
-  void addPoll(String boardId, String question, List<String> options) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+  void addPoll(String boardId, String question, List options) {
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
     if (board.isNotEmpty) {
-      board['polls'] ??= <Map<String, dynamic>>[];
-      (board['polls'] as List).add({
+      final boardMap = board as Map;
+      boardMap['polls'] ??= [];
+      (boardMap['polls'] as List).add({
         'id': 'poll_${DateTime.now().millisecondsSinceEpoch}',
         'question': question,
         'creator': currentUserProfile['name'] ?? 'Pengguna',
         'createdAt': 'Hari ini',
         'isClosed': false,
-        'options': options.map((opt) => {'text': opt, 'votes': <String>[]}).toList(),
+        'options': options.map((opt) => {'text': opt, 'votes': []}).toList(),
       });
       logActivity('Membuat polling baru: "$question"');
       notifyListeners();
@@ -598,18 +631,21 @@ class AppDataController extends ChangeNotifier {
   }
 
   void votePoll(String boardId, String pollId, int optionIndex) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
-    if (board.isNotEmpty && board['polls'] != null) {
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty && (board as Map)['polls'] != null) {
       final userName = currentUserProfile['name'] ?? 'Pengguna';
       for (var poll in (board['polls'] as List)) {
-        if (poll['id'] == pollId && poll['isClosed'] != true) {
-          final options = poll['options'] as List;
-          // Cek apakah user sudah vote opsi lain di poll yang sama, jika ya hilangkan (single choice vote)
+        final pollMap = poll as Map;
+        if (pollMap['id'] == pollId && pollMap['isClosed'] != true) {
+          final options = pollMap['options'] as List;
           for (var opt in options) {
-            (opt['votes'] as List).remove(userName);
+            ((opt as Map)['votes'] as List).remove(userName);
           }
           if (optionIndex >= 0 && optionIndex < options.length) {
-            (options[optionIndex]['votes'] as List).add(userName);
+            ((options[optionIndex] as Map)['votes'] as List).add(userName);
           }
           notifyListeners();
           break;
@@ -619,11 +655,15 @@ class AppDataController extends ChangeNotifier {
   }
 
   void togglePollStatus(String boardId, String pollId) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
-    if (board.isNotEmpty && board['polls'] != null) {
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty && (board as Map)['polls'] != null) {
       for (var poll in (board['polls'] as List)) {
-        if (poll['id'] == pollId) {
-          poll['isClosed'] = !(poll['isClosed'] ?? false);
+        final pollMap = poll as Map;
+        if (pollMap['id'] == pollId) {
+          pollMap['isClosed'] = !(pollMap['isClosed'] ?? false);
           notifyListeners();
           break;
         }
@@ -632,37 +672,67 @@ class AppDataController extends ChangeNotifier {
   }
 
   void deletePoll(String boardId, String pollId) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
-    if (board.isNotEmpty && board['polls'] != null) {
-      (board['polls'] as List).removeWhere((p) => p['id'] == pollId);
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty && (board as Map)['polls'] != null) {
+      (board['polls'] as List).removeWhere((p) => (p as Map)['id'] == pollId);
       notifyListeners();
     }
   }
 
-  void updateBoardDetails(String boardId, {String? title, String? desc, int? color, String? privacy}) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+  void updateBoardDetails(
+    String boardId, {
+    String? title,
+    String? desc,
+    int? color,
+    String? privacy,
+  }) {
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
     if (board.isNotEmpty) {
-      if (title != null && title.trim().isNotEmpty) board['title'] = title.trim();
-      if (desc != null) board['desc'] = desc.trim();
-      if (color != null) board['color'] = color;
-      if (privacy != null) board['privacy'] = privacy;
-      logActivity('Memperbarui informasi board "${board['title']}"');
+      final boardMap = board as Map;
+      if (title != null && title.trim().isNotEmpty)
+        boardMap['title'] = title.trim();
+      if (desc != null) boardMap['desc'] = desc.trim();
+      if (color != null) boardMap['color'] = color;
+      if (privacy != null) boardMap['privacy'] = privacy;
+      logActivity('Memperbarui informasi board "${boardMap['title']}"');
       notifyListeners();
     }
   }
 
   void addBoardMember(String boardId, String name, {int? color}) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
     if (board.isNotEmpty) {
-      board['members'] ??= <Map<String, dynamic>>[];
-      final List members = board['members'];
-      final bool alreadyExists = members.any((m) => (m['name'] as String).toLowerCase() == name.trim().toLowerCase());
+      final boardMap = board as Map;
+      boardMap['members'] ??= [];
+      final List members = boardMap['members'];
+      final bool alreadyExists = members.any(
+        (m) =>
+            ((m as Map)['name'] as String).toLowerCase() ==
+            name.trim().toLowerCase(),
+      );
       if (!alreadyExists && name.trim().isNotEmpty) {
-        final colors = [0xFF0F766E, 0xFF3B82F6, 0xFF10B981, 0xFFF59E0B, 0xFF8B5CF6, 0xFFEF4444];
+        final colors = [
+          0xFF0F766E,
+          0xFF3B82F6,
+          0xFF10B981,
+          0xFFF59E0B,
+          0xFF8B5CF6,
+          0xFFEF4444,
+        ];
         final pickedColor = color ?? colors[members.length % colors.length];
         members.add({
           'name': name.trim(),
           'color': pickedColor,
+          'role': 'Anggota',
         });
         logActivity('Menambahkan anggota "$name" ke board');
         notifyListeners();
@@ -671,19 +741,33 @@ class AppDataController extends ChangeNotifier {
   }
 
   void removeBoardMember(String boardId, String memberName) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
-    if (board.isNotEmpty && board['members'] != null) {
-      (board['members'] as List).removeWhere((m) => m['name'] == memberName);
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty && (board as Map)['members'] != null) {
+      (board['members'] as List).removeWhere(
+        (m) => (m as Map)['name'] == memberName,
+      );
       logActivity('Mengeluarkan anggota "$memberName" dari board');
       notifyListeners();
     }
   }
 
-  void addBoardFile(String boardId, String fileName, String size, {String extension = 'file'}) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
+  void addBoardFile(
+    String boardId,
+    String fileName,
+    String size, {
+    String extension = 'file',
+  }) {
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
     if (board.isNotEmpty) {
-      board['files'] ??= <Map<String, dynamic>>[];
-      (board['files'] as List).add({
+      final boardMap = board as Map;
+      boardMap['files'] ??= [];
+      (boardMap['files'] as List).add({
         'id': 'file_${DateTime.now().millisecondsSinceEpoch}',
         'name': fileName,
         'size': size,
@@ -697,39 +781,49 @@ class AppDataController extends ChangeNotifier {
   }
 
   void deleteBoardFile(String boardId, String fileId) {
-    final board = boards.firstWhere((b) => b['id'] == boardId, orElse: () => {});
-    if (board.isNotEmpty && board['files'] != null) {
-      (board['files'] as List).removeWhere((f) => f['id'] == fileId);
+    final board = boards.firstWhere(
+      (b) => (b as Map)['id'] == boardId,
+      orElse: () => {},
+    );
+    if (board.isNotEmpty && (board as Map)['files'] != null) {
+      (board['files'] as List).removeWhere((f) => (f as Map)['id'] == fileId);
       notifyListeners();
     }
   }
 
   void deleteBoard(String boardId) {
-    boards.removeWhere((b) => b['id'] == boardId);
-    tasks.removeWhere((t) => t['boardId'] == boardId);
+    boards.removeWhere((b) => (b as Map)['id'] == boardId);
+    tasks.removeWhere((t) => (t as Map)['boardId'] == boardId);
     logActivity('Menghapus board proyek');
     notifyListeners();
   }
 
   void addComment(String taskId, String text) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      (task['comments'] as List).add({
+      final taskMap = task as Map;
+      (taskMap['comments'] as List).add({
         'author': currentUserProfile['name'],
         'text': text,
         'time': 'Baru saja',
       });
-
-      logActivity('Mengomentari tugas: "${task['title']}"'); // Auto Log
+      logActivity('Mengomentari tugas: "${taskMap['title']}"');
       notifyListeners();
     }
   }
 
   void setTaskStartDate(String taskId, String date, String time) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      task['startDate'] = date;
-      task['startTime'] = time;
+      final taskMap = task as Map;
+      taskMap['startDate'] = date;
+      taskMap['startTime'] = time;
       notifyListeners();
     }
   }
@@ -741,16 +835,17 @@ class AppDataController extends ChangeNotifier {
     String reminder,
     bool addMeToCard,
   ) {
-    final task = tasks.firstWhere((t) => t['id'] == taskId, orElse: () => {});
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => {},
+    );
     if (task.isNotEmpty) {
-      task['dueDate'] = date;
-      task['dueTime'] = time;
-      task['reminder'] = reminder;
-      task['addMeToCard'] = addMeToCard;
-
-      if (date != 'Tanggal') {
-        task['date'] = date;
-      }
+      final taskMap = task as Map;
+      taskMap['dueDate'] = date;
+      taskMap['dueTime'] = time;
+      taskMap['reminder'] = reminder;
+      taskMap['addMeToCard'] = addMeToCard;
+      if (date != 'Tanggal') taskMap['date'] = date;
       notifyListeners();
     }
   }
