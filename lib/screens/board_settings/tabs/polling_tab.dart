@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../data/app_data.dart';
 import '../../../../theme/app_theme.dart';
 import '../create_poll_screen.dart';
 
@@ -11,58 +12,102 @@ class PollingTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      physics: const BouncingScrollPhysics(),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return ListenableBuilder(
+      listenable: AppDataController.instance,
+      builder: (context, _) {
+        // Ambil data board aktif dari global state secara aman
+        final board = AppDataController.instance.boards.firstWhere(
+          (b) => b['id'] == boardId,
+          orElse: () => <String, dynamic>{'title': 'Board'},
+        );
+
+        final String boardTitle = board['title']?.toString() ?? 'Board';
+        final List dynamicPolls = (board['polls'] as List?) ?? [];
+
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          physics: const BouncingScrollPhysics(),
           children: [
-            Text(
-              'Daftar Polling',
-              style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
-            ),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CreatePollScreen(
-                      boardId: boardId,
-                      boardTitle: 'Kuliah - TI',
-                    ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Daftar Polling',
+                  style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CreatePollScreen(
+                          boardId: boardId,
+                          boardTitle: boardTitle,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text(
+                    'Buat Polling',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
-                );
-              },
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text(
-                'Buat Polling',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                backgroundColor: Colors.white,
-                side: const BorderSide(color: AppColors.primary, width: 1.2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.2,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    minimumSize: Size.zero,
+                  ),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                minimumSize: Size.zero,
-              ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 1. POLLING DINAMIS BARU (Akan otomatis muncul di paling atas)
+            ...dynamicPolls.map((poll) {
+              if (poll is! Map) return const SizedBox.shrink();
+              return _buildPollCard(
+                title: poll['question']?.toString() ?? 'Tanpa Judul',
+                creator: poll['creator']?.toString() ?? 'Anggota',
+                date: poll['date']?.toString() ?? 'Hari ini',
+                respondents: 0, // Polling baru mulai dengan 0 responden
+                isActive: poll['isClosed'] != true,
+              );
+            }),
+
+            // 2. DUMMY POLLING (Akan tetap ada di bawahnya)
+            _buildPollCard(
+              title: 'Jadwal Makrab',
+              creator: 'Ilham Muttaqin',
+              date: '12 Okt 2025',
+              respondents: 6,
+              isActive: true,
             ),
           ],
-        ),
-        const SizedBox(height: 16),
-        _buildPollCard(),
-      ],
+        );
+      },
     );
   }
 
-  Widget _buildPollCard() {
+  Widget _buildPollCard({
+    required String title,
+    required String creator,
+    required String date,
+    required int respondents,
+    required bool isActive,
+  }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -94,12 +139,12 @@ class PollingTab extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Jadwal Makrab',
+                        title,
                         style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Dibuat oleh Ilham Muttaqin',
+                        'Dibuat oleh $creator',
                         style: AppTextStyles.cardSubtitle.copyWith(
                           fontSize: 12,
                         ),
@@ -114,7 +159,7 @@ class PollingTab extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '12 Okt 2025',
+                            date,
                             style: AppTextStyles.cardSubtitle.copyWith(
                               fontSize: 12,
                             ),
@@ -130,7 +175,9 @@ class PollingTab extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FAF8),
+                    color: isActive
+                        ? const Color(0xFFF0FAF8)
+                        : AppColors.surfaceMuted,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -139,18 +186,22 @@ class PollingTab extends StatelessWidget {
                       Container(
                         width: 6,
                         height: 6,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? AppColors.primary
+                              : AppColors.textMuted,
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Text(
-                        'Aktif',
+                      Text(
+                        isActive ? 'Aktif' : 'Selesai',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+                          color: isActive
+                              ? AppColors.primary
+                              : AppColors.textMuted,
                         ),
                       ),
                     ],
@@ -180,7 +231,7 @@ class PollingTab extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '6 responden',
+                  '$respondents responden',
                   style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
                 ),
               ],

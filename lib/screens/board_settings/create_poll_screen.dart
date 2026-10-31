@@ -81,7 +81,8 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
     }
   }
 
-  void _handleCreatePoll() {
+  // TAMBAHKAN async DI SINI
+  void _handleCreatePoll() async {
     final question = _titleController.text.trim();
     final validOptions = _optionControllers
         .map((c) => c.text.trim())
@@ -94,6 +95,7 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
       );
       return;
     }
+
     if (validOptions.length < 2) {
       ScaffoldMessenger.of(
         context,
@@ -101,24 +103,30 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
       return;
     }
 
+    // 1. Tampilkan animasi loading
     setState(() => _isLoading = true);
 
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (!mounted) return;
-      AppDataController.instance.addPoll(
-        widget.boardId,
-        question,
-        validOptions,
-      );
-      setState(() => _isLoading = false);
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Polling berhasil dibuat!'),
-          backgroundColor: AppColors.primary,
-        ),
-      );
-    });
+    // 2. Simpan data polling (proses ini sinkron)
+    AppDataController.instance.addPoll(widget.boardId, question, validOptions);
+
+    // 3. Beri jeda visual 600ms MENGGUNAKAN AWAIT
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    // 4. CEK MOUNTED DI SINI (Wajib untuk Dart Linter)
+    if (!mounted) return;
+
+    // 5. Matikan loading
+    setState(() => _isLoading = false);
+
+    // 6. Tutup layar dan tampilkan pesan sukses
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Polling berhasil dibuat!'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
   }
 
   @override
