@@ -8,6 +8,7 @@ import '../services/pdf_report_service.dart';
 import '../theme/app_theme.dart';
 import 'board_settings/board_settings_screen.dart';
 import 'task_detail_screen.dart';
+import 'board_chat_screen.dart';
 
 class BoardScreen extends StatefulWidget {
   final String boardId;
@@ -770,6 +771,23 @@ class _BoardScreenState extends State<BoardScreen> {
                 ),
               ),
             ],
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      BoardChatScreen(boardTitle: widget.boardTitle),
+                ),
+              );
+            },
+            backgroundColor: AppColors.primary,
+            elevation: 4,
+            child: const Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: Colors.white,
+            ),
           ),
         );
       },
