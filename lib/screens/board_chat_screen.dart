@@ -15,22 +15,14 @@ class BoardChatScreen extends StatefulWidget {
 class _BoardChatScreenState extends State<BoardChatScreen> {
   final TextEditingController _messageController = TextEditingController();
 
-  // Data obrolan statis (dummy) sesuai gambar
+  // PERUBAHAN 1: Urutan data dibalik (Pesan terbaru ditaruh di paling atas / index 0)
   final List _messages = [
-    {
-      'sender': 'Sari',
-      'initial': 'S',
-      'color': const Color(0xFF3B82F6), // Biru
-      'time': '09.15',
-      'text': 'Teman-teman, untuk tugas presentasi sudah sampai mana?',
-      'isMe': false,
-    },
     {
       'sender': 'Ilham',
       'initial': 'I',
-      'color': const Color(0xFF00A896), // Tosca
-      'time': '09.18',
-      'text': 'Materinya sudah saya susun, tinggal bagian desain slide.',
+      'color': const Color(0xFF00A896),
+      'time': '09.32',
+      'text': 'Oke, makasih semuanya 🙏',
       'isMe': true,
     },
     {
@@ -44,10 +36,18 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
     {
       'sender': 'Ilham',
       'initial': 'I',
-      'color': const Color(0xFF00A896),
-      'time': '09.32',
-      'text': 'Oke, makasih semuanya 🙏',
+      'color': const Color(0xFF00A896), // Tosca
+      'time': '09.18',
+      'text': 'Materinya sudah saya susun, tinggal bagian desain slide.',
       'isMe': true,
+    },
+    {
+      'sender': 'Sari',
+      'initial': 'S',
+      'color': const Color(0xFF3B82F6), // Biru
+      'time': '09.15',
+      'text': 'Teman-teman, untuk tugas presentasi sudah sampai mana?',
+      'isMe': false,
     },
   ];
 
@@ -60,7 +60,8 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
       setState(() {
-        _messages.add({
+        // PERUBAHAN 2: Gunakan insert(0) agar pesan baru masuk ke index 0 (paling bawah di layar)
+        _messages.insert(0, {
           'sender': 'Ilham',
           'initial': 'I',
           'color': const Color(0xFF00A896),
@@ -234,6 +235,8 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                 // 3. DAFTAR CHAT (List)
                 Expanded(
                   child: ListView.builder(
+                    // PERUBAHAN 3: Aktifkan reverse agar list menempel di bawah dan ikut naik saat keyboard muncul
+                    reverse: true,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 16,
@@ -241,10 +244,11 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                     physics: const BouncingScrollPhysics(),
                     itemCount: _messages.length + 1, // +1 untuk badge tanggal
                     itemBuilder: (context, index) {
-                      if (index == 0) {
+                      // PERUBAHAN 4: Karena reverse=true, index terakhir adalah posisi paling atas layar
+                      if (index == _messages.length) {
                         return Center(
                           child: Container(
-                            margin: const EdgeInsets.only(bottom: 24),
+                            margin: const EdgeInsets.only(bottom: 24, top: 16),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 6,
@@ -264,7 +268,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                         );
                       }
 
-                      final msg = _messages[index - 1];
+                      final msg = _messages[index];
                       return _buildChatBubble(
                         text: msg['text'],
                         sender: msg['sender'],
@@ -385,8 +389,9 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
     required Color color,
     required bool isMe,
   }) {
+    // Sedikit penyesuaian padding karena reverse: true membalik arah render
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20.0),
+      padding: const EdgeInsets.only(top: 20.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: isMe
