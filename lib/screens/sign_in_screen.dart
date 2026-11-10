@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/curved_header.dart';
 import '../widgets/timkerja_logo.dart';
@@ -8,6 +9,8 @@ import '../widgets/google_icon.dart';
 import 'sign_up_screen.dart';
 import 'splash_screen.dart';
 import 'main_navigation_screen.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -30,19 +33,37 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
-  void _handleSignIn() {
+  void _handleSignIn() async {
     if (_formKey.currentState?.validate() ?? false) {
       setState(() => _isLoading = true);
-      Future.delayed(const Duration(milliseconds: 900), () {
+      try {
+        await AuthService.signIn(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+
         if (!mounted) return;
         setState(() => _isLoading = false);
-        // Navigasi ke halaman utama
+
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => const MainNavigationScreen(),
-          ), // Hapus baris ini jika belum ada file main_navigation_screen.dart
+          MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
         );
-      });
+      } on AuthException catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal login. Periksa email & password Anda.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -212,7 +233,9 @@ class _SignInScreenState extends State<SignInScreen> {
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 14,
                                   ),
-                                  side: BorderSide(color: AppColors.borderLight),
+                                  side: BorderSide(
+                                    color: AppColors.borderLight,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(25),
                                   ),

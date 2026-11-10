@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/curved_header.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/google_icon.dart';
 import '../data/app_data.dart';
 import 'main_navigation_screen.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -35,23 +38,43 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  void _handleSignUp() {
+  void _handleSignUp() async {
     if (_formKey.currentState?.validate() ?? false) {
       setState(() => _isLoading = true);
+      try {
+        await AuthService.signUp(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+          name: _nameController.text.trim(),
+          role: _selectedRole,
+        );
 
-      Future.delayed(const Duration(milliseconds: 900), () {
         if (!mounted) return;
         setState(() => _isLoading = false);
 
-        // 1. SIMPAN ROLE KE STATE GLOBAL
+        // Simpan role ke state lokal sementara jika dibutuhkan UI
         AppDataController.instance.currentUserRole = _selectedRole;
 
-        // 2. ARAHKAN LANGSUNG KE HALAMAN UTAMA (Hapus riwayat login)
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
           (route) => false,
         );
-      });
+      } on AuthException catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Terjadi kesalahan yang tidak terduga.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 

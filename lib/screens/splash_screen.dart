@@ -6,6 +6,8 @@ import '../widgets/timkerja_logo.dart';
 import '../widgets/kanban_preview.dart';
 import '../widgets/phone_preview.dart';
 import 'sign_in_screen.dart';
+import '../services/auth_service.dart'; // Tambahkan import AuthService
+import 'main_navigation_screen.dart'; // Pastikan import ini ada
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,6 +21,27 @@ class _SplashScreenState extends State<SplashScreen> {
   int _currentPage = 0;
   final int _totalPages = 2;
   static const Color primaryTeal = AppColors.primary;
+
+  // 1. Tambahkan metode initState untuk mengecek sesi
+  @override
+  void initState() {
+    super.initState();
+    _checkSession();
+  }
+
+  // 2. Buat fungsi pengecekan sesi
+  void _checkSession() async {
+    // Berikan jeda 1.5 detik agar animasi splash screen tetap terlihat sebentar
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    if (AuthService.isAuthenticated) {
+      if (!mounted) return;
+      // Jika token ada, langsung lempar ke MainNavigationScreen (skip onboarding)
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+      );
+    }
+  }
 
   void _navigateToSignIn() {
     Navigator.of(context).pushReplacement(
