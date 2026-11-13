@@ -1,16 +1,63 @@
 import 'package:flutter/material.dart';
 
+import '../services/profile_service.dart';
+
 class AppDataController extends ChangeNotifier {
   static final AppDataController instance = AppDataController._internal();
   AppDataController._internal();
 
-  String currentUserRole = 'Pembuat Board';
+  String currentUserRole =
+      'Anggota'; // Default awal, akan di-update oleh Supabase
+
+  // 1. UBAH PROFIL MENJADI BLUEPRINT KOSONG
   Map currentUserProfile = {
-    'name': 'Ilham',
-    'email': 'ilham@student.ac.id',
-    'initials': 'IM',
+    'id': '',
+    'name': 'Loading...',
+    'email': 'Loading...',
+    'initials': '?',
     'avatarColor': 0xFF0F766E,
   };
+
+  // 2. TAMBAHKAN FUNGSI UNTUK FETCH PROFIL DARI SUPABASE
+  Future<void> loadUserProfile(String userId) async {
+    final profileData = await ProfileService.getProfile(userId);
+
+    if (profileData != null) {
+      currentUserProfile = {
+        'id': profileData['id'],
+        'name': profileData['name'] ?? 'User',
+        'email': profileData['email'] ?? '',
+        'initials': _getInitials(profileData['name'] ?? 'U'),
+        'avatarColor': profileData['avatar_color'] ?? 0xFF0F766E,
+      };
+
+      currentUserRole = profileData['role'] ?? 'Anggota';
+      notifyListeners();
+    }
+  }
+
+  // Reset data user saat logout
+  void resetUserSession() {
+    currentUserRole = 'Anggota';
+    currentUserProfile = {
+      'id': '',
+      'name': 'Loading...',
+      'email': 'Loading...',
+      'initials': '?',
+      'avatarColor': 0xFF0F766E,
+    };
+    notifyListeners();
+  }
+
+  // Helper pembuat inisial nama
+  String _getInitials(String name) {
+    if (name.isEmpty) return '?';
+    List<String> parts = name.trim().split(' ');
+    if (parts.length > 1) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+  }
 
   List boards = [
     {

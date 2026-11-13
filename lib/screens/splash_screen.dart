@@ -8,6 +8,7 @@ import '../widgets/phone_preview.dart';
 import 'sign_in_screen.dart';
 import '../services/auth_service.dart'; // Tambahkan import AuthService
 import 'main_navigation_screen.dart'; // Pastikan import ini ada
+import '../data/app_data.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -33,8 +34,13 @@ class _SplashScreenState extends State<SplashScreen> {
   void _checkSession() async {
     // Berikan jeda 1.5 detik agar animasi splash screen tetap terlihat sebentar
     await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
 
-    if (AuthService.isAuthenticated) {
+    if (AuthService.isAuthenticated && AuthService.currentUser != null) {
+      // Ambil ID user yang sedang aktif dan muat profilnya
+      final userId = AuthService.currentUser!.id;
+      await AppDataController.instance.loadUserProfile(userId);
+
       if (!mounted) return;
       // Jika token ada, langsung lempar ke MainNavigationScreen (skip onboarding)
       Navigator.of(context).pushReplacement(

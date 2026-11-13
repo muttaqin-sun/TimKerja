@@ -42,18 +42,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (_formKey.currentState?.validate() ?? false) {
       setState(() => _isLoading = true);
       try {
-        await AuthService.signUp(
+        final res = await AuthService.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
           name: _nameController.text.trim(),
           role: _selectedRole,
         );
 
+        if (res.user != null) {
+          await AppDataController.instance.loadUserProfile(res.user!.id);
+        } else {
+          AppDataController.instance.currentUserRole = _selectedRole;
+        }
+
         if (!mounted) return;
         setState(() => _isLoading = false);
-
-        // Simpan role ke state lokal sementara jika dibutuhkan UI
-        AppDataController.instance.currentUserRole = _selectedRole;
 
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const MainNavigationScreen()),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/top_decor_blob.dart';
 import 'sign_in_screen.dart';
@@ -248,11 +249,15 @@ class ProfileTab extends StatelessWidget {
                           ),
                         ),
                         child: ListTile(
-                          onTap: () {
-                            Navigator.of(context).pushReplacement(
+                          onTap: () async {
+                            await AuthService.signOut();
+                            AppDataController.instance.resetUserSession();
+                            if (!context.mounted) return;
+                            Navigator.of(context).pushAndRemoveUntil(
                               MaterialPageRoute(
                                 builder: (context) => const SignInScreen(),
                               ),
+                              (route) => false,
                             );
                           },
                           shape: const RoundedRectangleBorder(

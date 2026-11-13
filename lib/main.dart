@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_navigation_screen.dart';
+import 'data/app_data.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,13 @@ Future<void> main() async {
     url: 'https://fftzlawppqwltagfgtxu.supabase.co', // Ganti dengan URL Supabase milikmu
     anonKey: 'sb_publishable_D7oMJI_u9Q46ogTu_7b0LQ_6ulGzdgx', // Ganti dengan Anon Key milikmu
   );
+
+  // Jika ada sesi login aktif, muat data profil user sebelum aplikasi tampil
+  final currentUser = Supabase.instance.client.auth.currentUser;
+  if (currentUser != null) {
+    await AppDataController.instance.loadUserProfile(currentUser.id);
+  }
+
   runApp(const TimkerjaApp());
 }
 

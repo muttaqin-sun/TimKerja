@@ -9,6 +9,7 @@ import '../widgets/google_icon.dart';
 import 'sign_up_screen.dart';
 import 'splash_screen.dart';
 import 'main_navigation_screen.dart';
+import '../data/app_data.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -42,6 +43,10 @@ class _SignInScreenState extends State<SignInScreen> {
           password: _passwordController.text.trim(),
         );
 
+        //muat profil setelah login sukses
+        final userId = AuthService.currentUser!.id;
+        await AppDataController.instance.loadUserProfile(userId);
+        ;
         if (!mounted) return;
         setState(() => _isLoading = false);
 
