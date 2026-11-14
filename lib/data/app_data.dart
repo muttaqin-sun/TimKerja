@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/profile_service.dart';
+import '../services/board_service.dart';
 
 class AppDataController extends ChangeNotifier {
   static final AppDataController instance = AppDataController._internal();
@@ -16,6 +17,7 @@ class AppDataController extends ChangeNotifier {
     'email': 'Loading...',
     'initials': '?',
     'avatarColor': 0xFF0F766E,
+    'avatarUrl': null,
   };
 
   // 2. TAMBAHKAN FUNGSI UNTUK FETCH PROFIL DARI SUPABASE
@@ -29,11 +31,24 @@ class AppDataController extends ChangeNotifier {
         'email': profileData['email'] ?? '',
         'initials': _getInitials(profileData['name'] ?? 'U'),
         'avatarColor': profileData['avatar_color'] ?? 0xFF0F766E,
+        'avatarUrl': profileData['avatar_url'],
       };
 
       currentUserRole = profileData['role'] ?? 'Anggota';
       notifyListeners();
     }
+  }
+
+  // Update data profil lokal secara langsung
+  void updateLocalProfile({String? name, String? avatarUrl}) {
+    if (name != null) {
+      currentUserProfile['name'] = name;
+      currentUserProfile['initials'] = _getInitials(name);
+    }
+    if (avatarUrl != null) {
+      currentUserProfile['avatarUrl'] = avatarUrl;
+    }
+    notifyListeners();
   }
 
   // Reset data user saat logout
@@ -45,7 +60,53 @@ class AppDataController extends ChangeNotifier {
       'email': 'Loading...',
       'initials': '?',
       'avatarColor': 0xFF0F766E,
+      'avatarUrl': null,
     };
+    boards = [];
+    tasks = [];
+    notifyListeners();
+  }
+
+  // Load Boards dari Supabase
+  Future<void> loadUserBoards(String userId) async {
+    final fetched = await BoardService.fetchUserBoards(
+      userId: userId,
+      role: currentUserRole,
+    );
+
+    boards = fetched.map((b) {
+      // Normalisasi format board agar kompatibel dengan UI Timkerja yang sudah ada
+      final List rawLists = b['board_lists'] as List? ?? [];
+      rawLists.sort((a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0));
+      final List<String> listTitles = rawLists.map((l) => l['title'].toString()).toList();
+
+      final List rawMembers = b['board_members'] as List? ?? [];
+      final List<Map<String, dynamic>> memberMaps = rawMembers.map((m) {
+        final prof = m['profiles'] as Map? ?? {};
+        return {
+          'userId': m['user_id'],
+          'name': prof['name'] ?? 'Member',
+          'color': prof['avatar_color'] ?? 0xFF0F766E,
+          'role': m['role'] ?? 'Member',
+        };
+      }).toList();
+
+      return {
+        'id': b['id'].toString(),
+        'title': b['title'] ?? 'Untitled Board',
+        'desc': b['description'] ?? '',
+        'color': b['color'] ?? 0xFF004D40,
+        'privacy': b['privacy'] ?? 'Private',
+        'code': b['code'] ?? '',
+        'created_by': b['created_by']?.toString(),
+        'lists': listTitles,
+        'lockedLists': [],
+        'members': memberMaps,
+        'polls': [],
+        'files': [],
+      };
+    }).toList();
+
     notifyListeners();
   }
 
@@ -59,75 +120,7 @@ class AppDataController extends ChangeNotifier {
     return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
   }
 
-  List boards = [
-    {
-      'id': 'b1',
-      'title': 'Kuliah - TI',
-      'desc': 'Proyek tugas pemrograman & UI/UX',
-      'color': 0xFF004D40,
-      'privacy': 'Private',
-      'code': 'KULIAH-TI-8X2P',
-      'lists': ['Tugas Harian', 'Projek Akhir', 'Revisi'],
-      'lockedLists': [],
-      'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Admin'},
-        {'name': 'Sari', 'color': 0xFF3B82F6, 'role': 'Anggota'},
-        {'name': 'Budi', 'color': 0xFF10B981, 'role': 'Anggota'},
-      ],
-      'polls': [
-        {
-          'id': 'p1',
-          'question': 'Pilih jadwal presentasi tugas akhir?',
-          'creator': 'Ilham',
-          'isClosed': false,
-          'options': [
-            {
-              'text': 'Senin, 09:00 WIB',
-              'votes': ['Ilham'],
-            },
-            {
-              'text': 'Rabu, 13:00 WIB',
-              'votes': ['Sari', 'Budi'],
-            },
-          ],
-        },
-      ],
-      'files': [
-        {
-          'id': 'f1',
-          'name': 'Brief-Tugas-Akhir.pdf',
-          'size': '2.4 MB',
-          'uploadedBy': 'Ilham',
-          'uploadedAt': 'Kemarin',
-          'extension': 'pdf',
-        },
-        {
-          'id': 'f2',
-          'name': 'Design-Mockup.fig',
-          'size': '5.1 MB',
-          'uploadedBy': 'Sari',
-          'uploadedAt': '2 hari lalu',
-          'extension': 'fig',
-        },
-      ],
-    },
-    {
-      'id': 'b2',
-      'title': 'Project A',
-      'desc': 'Manajemen proyek utama',
-      'color': 0xFF16A34A,
-      'privacy': 'Workspace',
-      'code': 'PROJ-A-9Y3Q',
-      'lists': ['Tahap 1', 'Tahap 2', 'Selesai'],
-      'lockedLists': ['Selesai'],
-      'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E, 'role': 'Admin'},
-        {'name': 'Andi', 'color': 0xFFF59E0B, 'role': 'Anggota'},
-      ],
-      'polls': [],
-      'files': [],
-    },
-  ];
+  List boards = [];
 
   List tasks = [
     {
@@ -286,84 +279,110 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addBoard(
+  Future<bool> addBoard(
     String title,
     String desc,
     dynamic color,
     String privacy, {
     List? initialLists,
-  }) {
-    String generateCode() =>
-        'BRD-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+  }) async {
+    final userId = currentUserProfile['id'];
+    if (userId == null || userId.toString().isEmpty) return false;
 
-    boards.add({
-      'id': 'b_${DateTime.now().millisecondsSinceEpoch}',
-      'title': title,
-      'desc': desc,
-      'color': color is Color ? color.value : color,
-      'privacy': privacy,
-      'code': generateCode(),
-      'lists': initialLists ?? [],
-      'lockedLists': [],
-      'members': [
-        {
-          'name': currentUserProfile['name'],
-          'color': currentUserProfile['avatarColor'],
-          'role': 'Admin',
-        },
-      ],
-      'polls': [],
-      'files': [],
-    });
+    final colorVal = color is Color ? color.value : (color as int? ?? 0xFF004D40);
 
-    logActivity('Membuat board baru: "$title"');
-    notifyListeners();
-  }
-
-  bool joinBoardByCode(String code) {
-    final boardIndex = boards.indexWhere(
-      (b) => (b as Map)['code'] == code.trim().toUpperCase(),
+    final newBoard = await BoardService.createBoard(
+      title: title,
+      desc: desc,
+      color: colorVal,
+      privacy: privacy,
+      userId: userId.toString(),
     );
-    if (boardIndex != -1) {
-      final board = boards[boardIndex] as Map;
-      List members = List.from(board['members'] ?? []);
-      bool alreadyJoined = members.any(
-        (m) => (m as Map)['name'] == currentUserProfile['name'],
-      );
 
-      if (!alreadyJoined) {
-        members.add({
-          'name': currentUserProfile['name'],
-          'color': currentUserProfile['avatarColor'],
-          'role': 'Anggota',
-        });
-        board['members'] = members;
-        logActivity('Bergabung ke board: "${board['title']}"');
-        notifyListeners();
-        return true;
-      }
+    if (newBoard != null) {
+      logActivity('Membuat board baru: "$title"');
+      await loadUserBoards(userId.toString());
+      return true;
     }
     return false;
   }
 
-  void updateBoardSettings(
+  Future<Map<String, dynamic>> joinBoardByCode(String code) async {
+    final userId = currentUserProfile['id'];
+    if (userId == null || userId.toString().isEmpty) {
+      return {'success': false, 'message': 'User belum login.'};
+    }
+
+    final res = await BoardService.joinBoardByCode(
+      code: code,
+      userId: userId.toString(),
+    );
+
+    if (res['success'] == true) {
+      final boardTitle = res['board']?['title'] ?? 'Board';
+      logActivity('Bergabung ke board: "$boardTitle"');
+      await loadUserBoards(userId.toString());
+    }
+    return res;
+  }
+
+  Future<bool> updateBoardSettings(
     String boardId,
     String newTitle,
     String newDesc,
     String newPrivacy,
-  ) {
-    final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+  ) async {
+    final success = await BoardService.updateBoardSettings(
+      boardId: boardId,
+      title: newTitle,
+      desc: newDesc,
+      privacy: newPrivacy,
     );
-    if (board.isNotEmpty) {
-      final boardMap = board as Map;
-      boardMap['title'] = newTitle;
-      boardMap['desc'] = newDesc;
-      boardMap['privacy'] = newPrivacy;
-      logActivity('Mengubah pengaturan board: "$newTitle"');
+
+    if (success) {
+      final board = boards.firstWhere(
+        (b) => (b as Map)['id'] == boardId,
+        orElse: () => {},
+      );
+      if (board.isNotEmpty) {
+        final boardMap = board as Map;
+        boardMap['title'] = newTitle;
+        boardMap['desc'] = newDesc;
+        boardMap['privacy'] = newPrivacy;
+        logActivity('Mengubah pengaturan board: "$newTitle"');
+        notifyListeners();
+      }
+    }
+    return success;
+  }
+
+  Future<bool> deleteBoard(String boardId) async {
+    final success = await BoardService.deleteBoard(boardId);
+    if (success) {
+      boards.removeWhere((b) => (b as Map)['id'] == boardId);
+      tasks.removeWhere((t) => (t as Map)['boardId'] == boardId);
+      logActivity('Menghapus board proyek');
       notifyListeners();
     }
+    return success;
+  }
+
+  Future<bool> leaveBoard(String boardId) async {
+    final userId = currentUserProfile['id'];
+    if (userId == null) return false;
+
+    final success = await BoardService.leaveBoard(
+      boardId: boardId,
+      userId: userId.toString(),
+    );
+
+    if (success) {
+      boards.removeWhere((b) => (b as Map)['id'] == boardId);
+      tasks.removeWhere((t) => (t as Map)['boardId'] == boardId);
+      logActivity('Keluar dari board');
+      notifyListeners();
+    }
+    return success;
   }
 
   void addBoardList(String boardId, String listTitle) {
@@ -838,12 +857,7 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void deleteBoard(String boardId) {
-    boards.removeWhere((b) => (b as Map)['id'] == boardId);
-    tasks.removeWhere((t) => (t as Map)['boardId'] == boardId);
-    logActivity('Menghapus board proyek');
-    notifyListeners();
-  }
+  // Catatan: implementasi async deleteBoard sudah ada di atas
 
   void addComment(String taskId, String text) {
     final task = tasks.firstWhere(

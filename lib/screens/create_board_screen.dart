@@ -13,6 +13,7 @@ class CreateBoardScreen extends StatefulWidget {
 class _CreateBoardScreenState extends State<CreateBoardScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
+  bool _isCreating = false;
 
   // State untuk Warna Aksen (0 = dummy image upload, 1 dst = warna)
   int _selectedColorIndex = 1;
@@ -332,21 +333,61 @@ class _CreateBoardScreenState extends State<CreateBoardScreen> {
 
             // 5. Tombol Submit (Disesuaikan Warnanya)
             ElevatedButton(
-              onPressed: () {
-                if (_nameController.text.isNotEmpty) {
-                  // Simpan ke memori!
-                  AppDataController.instance.addBoard(
-                    _nameController.text,
-                    _descController.text,
-                    _selectedColorIndex == 0
-                        ? AppColors.primary
-                        : _accentColors[_selectedColorIndex],
-                    _selectedPrivacy,
-                  );
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('Buat Board'),
+              onPressed: _isCreating
+                  ? null
+                  : () async {
+                      final title = _nameController.text.trim();
+                      if (title.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Nama Board wajib diisi!'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setState(() => _isCreating = true);
+
+                      final success = await AppDataController.instance.addBoard(
+                        title,
+                        _descController.text.trim(),
+                        _selectedColorIndex == 0
+                            ? AppColors.primary
+                            : _accentColors[_selectedColorIndex],
+                        _selectedPrivacy,
+                      );
+
+                      if (!mounted) return;
+                      setState(() => _isCreating = false);
+
+                      if (success) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Board berhasil dibuat!'),
+                            backgroundColor: AppColors.primary,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Gagal membuat board. Periksa koneksi internet Anda.'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    },
+              child: _isCreating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : const Text('Buat Board'),
             ),
           ],
         ),

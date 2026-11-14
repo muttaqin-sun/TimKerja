@@ -14,6 +14,85 @@ import 'settings/about_screen.dart';
 class ProfileTab extends StatelessWidget {
   const ProfileTab({super.key});
 
+  void _showAvatarPreview(BuildContext context, Map profile, Color avatarColor, String? avatarUrl) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: 240,
+                height: 240,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: avatarColor.withOpacity(0.2),
+                  border: Border.all(color: Colors.white.withOpacity(0.8), width: 4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.4),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                  image: avatarUrl != null && avatarUrl.isNotEmpty
+                      ? DecorationImage(
+                          image: NetworkImage(avatarUrl),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: (avatarUrl == null || avatarUrl.isEmpty)
+                    ? Center(
+                        child: Text(
+                          profile['initials'],
+                          style: TextStyle(
+                            fontSize: 84,
+                            fontWeight: FontWeight.bold,
+                            color: avatarColor,
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                profile['name'] ?? '',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                profile['email'] ?? '',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.75),
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,26 +156,39 @@ class ProfileTab extends StatelessWidget {
                       // User Info Header Dinamis
                       Row(
                         children: [
-                          Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: avatarColor.withOpacity(0.15),
-                              border: Border.all(
-                                color: avatarColor.withOpacity(0.4),
-                                width: 2,
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                profile['initials'],
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: avatarColor,
+                          GestureDetector(
+                            onTap: () => _showAvatarPreview(context, profile, avatarColor, profile['avatarUrl']),
+                            child: Container(
+                              width: 72,
+                              height: 72,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: avatarColor.withOpacity(0.15),
+                                border: Border.all(
+                                  color: avatarColor.withOpacity(0.4),
+                                  width: 2,
                                 ),
+                                image: profile['avatarUrl'] != null &&
+                                        (profile['avatarUrl'] as String).isNotEmpty
+                                    ? DecorationImage(
+                                        image: NetworkImage(profile['avatarUrl']),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
                               ),
+                              child: profile['avatarUrl'] == null ||
+                                      (profile['avatarUrl'] as String).isEmpty
+                                  ? Center(
+                                      child: Text(
+                                        profile['initials'],
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                          color: avatarColor,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 16),

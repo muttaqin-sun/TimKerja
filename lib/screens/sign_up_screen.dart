@@ -51,6 +51,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
         if (res.user != null) {
           await AppDataController.instance.loadUserProfile(res.user!.id);
+          await AppDataController.instance.loadUserBoards(res.user!.id);
         } else {
           AppDataController.instance.currentUserRole = _selectedRole;
         }

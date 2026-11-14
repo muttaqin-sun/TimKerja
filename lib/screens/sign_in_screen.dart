@@ -43,10 +43,10 @@ class _SignInScreenState extends State<SignInScreen> {
           password: _passwordController.text.trim(),
         );
 
-        //muat profil setelah login sukses
+        // Muat profil dan board setelah login sukses
         final userId = AuthService.currentUser!.id;
         await AppDataController.instance.loadUserProfile(userId);
-        ;
+        await AppDataController.instance.loadUserBoards(userId);
         if (!mounted) return;
         setState(() => _isLoading = false);
 

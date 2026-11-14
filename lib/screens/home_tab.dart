@@ -54,14 +54,24 @@ class HomeTab extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
               ),
-              onPressed: () {
+              onPressed: () async {
                 final code = codeCtrl.text.trim();
                 if (code.isNotEmpty) {
-                  final success = AppDataController.instance.joinBoardByCode(
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Memeriksa kode board...'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+
+                  final result = await AppDataController.instance.joinBoardByCode(
                     code,
                   );
-                  Navigator.pop(context);
-                  if (success) {
+
+                  if (!context.mounted) return;
+
+                  if (result['success'] == true) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Berhasil bergabung ke Board!'),
@@ -70,9 +80,9 @@ class HomeTab extends StatelessWidget {
                     );
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Kode tidak valid atau Anda sudah bergabung.',
+                          result['message'] ?? 'Kode tidak valid atau Anda sudah bergabung.',
                         ),
                         backgroundColor: AppColors.error,
                       ),
@@ -118,14 +128,23 @@ class HomeTab extends StatelessWidget {
           size: 26,
         ),
       ),
-      body: Stack(
-        children: [
-          TopDecorBlob(size: 150),
-          SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: AppSpacing.screenPadding,
-              child: Column(
+      body: RefreshIndicator(
+        onRefresh: () async {
+          final userId = AppDataController.instance.currentUserProfile['id'];
+          if (userId != null && userId.toString().isNotEmpty) {
+            await AppDataController.instance.loadUserBoards(userId.toString());
+          }
+        },
+        child: Stack(
+          children: [
+            TopDecorBlob(size: 150),
+            SafeArea(
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: AppSpacing.screenPadding,
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -299,8 +318,9 @@ class HomeTab extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSectionHeader(String title, {required VoidCallback onViewAll}) {
     return Row(

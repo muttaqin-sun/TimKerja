@@ -15,10 +15,11 @@ Future<void> main() async {
     anonKey: 'sb_publishable_D7oMJI_u9Q46ogTu_7b0LQ_6ulGzdgx', // Ganti dengan Anon Key milikmu
   );
 
-  // Jika ada sesi login aktif, muat data profil user sebelum aplikasi tampil
+  // Jika ada sesi login aktif, muat data profil user & board sebelum aplikasi tampil
   final currentUser = Supabase.instance.client.auth.currentUser;
   if (currentUser != null) {
     await AppDataController.instance.loadUserProfile(currentUser.id);
+    await AppDataController.instance.loadUserBoards(currentUser.id);
   }
 
   runApp(const TimkerjaApp());

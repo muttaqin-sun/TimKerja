@@ -37,9 +37,10 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (AuthService.isAuthenticated && AuthService.currentUser != null) {
-      // Ambil ID user yang sedang aktif dan muat profilnya
+      // Ambil ID user yang sedang aktif dan muat profil serta boards
       final userId = AuthService.currentUser!.id;
       await AppDataController.instance.loadUserProfile(userId);
+      await AppDataController.instance.loadUserBoards(userId);
 
       if (!mounted) return;
       // Jika token ada, langsung lempar ke MainNavigationScreen (skip onboarding)

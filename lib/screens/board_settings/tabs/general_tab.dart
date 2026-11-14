@@ -584,10 +584,30 @@ class _GeneralTabState extends State<GeneralTab> {
             child: const Text('Batal'),
           ),
           ElevatedButton(
-            onPressed: () {
-              AppDataController.instance.deleteBoard(widget.boardId);
-              Navigator.pop(ctx); // Tutup dialog
-              Navigator.pop(context); // Keluar dari layar setting
+            onPressed: () async {
+              Navigator.pop(ctx); // Tutup dialog konfirmasi
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Menghapus board...')),
+              );
+              final success = await AppDataController.instance.deleteBoard(widget.boardId);
+              if (!context.mounted) return;
+              if (success) {
+                Navigator.pop(context); // Keluar dari layar setting
+                Navigator.pop(context); // Keluar dari layar board ke home
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Board berhasil dihapus permanen'),
+                    backgroundColor: AppColors.primary,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Gagal menghapus board. Anda mungkin bukan pemilik board ini.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,
