@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/profile_service.dart';
 import '../services/board_service.dart';
+import '../services/task_service.dart';
 
 class AppDataController extends ChangeNotifier {
   static final AppDataController instance = AppDataController._internal();
@@ -77,8 +78,12 @@ class AppDataController extends ChangeNotifier {
     boards = fetched.map((b) {
       // Normalisasi format board agar kompatibel dengan UI Timkerja yang sudah ada
       final List rawLists = b['board_lists'] as List? ?? [];
-      rawLists.sort((a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0));
-      final List<String> listTitles = rawLists.map((l) => l['title'].toString()).toList();
+      rawLists.sort(
+        (a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0),
+      );
+      final List<String> listTitles = rawLists
+          .map((l) => l['title'].toString())
+          .toList();
 
       final List rawMembers = b['board_members'] as List? ?? [];
       final List<Map<String, dynamic>> memberMaps = rawMembers.map((m) {
@@ -110,6 +115,149 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Load Task & List terbaru dari Supabase untuk Board tertentu
+  Future<void> loadTasksForBoard(String boardId) async {
+    final fetchedLists = await TaskService.fetchBoardLists(boardId);
+    final boardIndex = boards.indexWhere((b) => (b as Map)['id'] == boardId);
+    if (boardIndex != -1) {
+      final boardMap = boards[boardIndex] as Map;
+      boardMap['lists'] = fetchedLists
+          .map((l) => l['title'].toString())
+          .toList();
+      boardMap['lockedLists'] = fetchedLists
+          .where((l) => l['is_locked'] == true)
+          .map((l) => l['title'].toString())
+          .toList();
+    }
+
+    final fetched = await TaskService.fetchTasksByBoard(boardId);
+    tasks.removeWhere((t) => (t as Map)['boardId'] == boardId);
+
+    for (var raw in fetched) {
+      final List<dynamic> rawSubtasks = raw['subtasks'] as List? ?? [];
+      final List<Map<String, dynamic>> subtasksList = rawSubtasks
+          .map(
+            (s) => {
+              'id': s['id'],
+              'title': s['title'] ?? '',
+              'isDone': s['is_done'] ?? false,
+            },
+          )
+          .toList();
+
+      final List<dynamic> rawComments = raw['task_comments'] as List? ?? [];
+      final List<Map<String, dynamic>> commentsList = rawComments.map((c) {
+        final prof = c['profiles'] as Map? ?? {};
+        return {
+          'id': c['id'],
+          'author': prof['name'] ?? 'User',
+          'text': c['text'] ?? '',
+          'time': 'Baru saja',
+        };
+      }).toList();
+
+      tasks.add({
+        'id': raw['id'].toString(),
+        'boardId': raw['board_id'].toString(),
+        'listName': raw['list_name'] ?? 'To Do',
+        'title': raw['title'] ?? '',
+        'status': raw['status'] ?? 'To Do',
+        'priority': raw['priority'] ?? 'Low',
+        'date': raw['due_date'] ?? 'No Date',
+        'desc': raw['description'] ?? '',
+        'isDone': raw['is_done'] ?? false,
+        'coverColor': raw['cover_color'],
+        'coverSize': raw['cover_size'] ?? 'header',
+        'startDate': raw['start_date'],
+        'startTime': raw['start_time'],
+        'dueDate': raw['due_date'],
+        'dueTime': raw['due_time'],
+        'reminder': raw['reminder'] ?? '1 hari sebelumnya',
+        'addMeToCard': raw['add_me_to_card'] ?? false,
+        'subtasks': subtasksList,
+        'comments': commentsList,
+        'attachments': [],
+        'members': [],
+      });
+    }
+
+    notifyListeners();
+  }
+
+  Future<bool> addBoardList(String boardId, String listTitle) async {
+    try {
+      final bId = boardId.toString();
+      final boardIndex = boards.indexWhere(
+        (b) => (b as Map)['id'].toString() == bId,
+      );
+      final List currentLists = boardIndex != -1
+          ? List.from((boards[boardIndex] as Map)['lists'] ?? [])
+          : [];
+
+      await TaskService.createBoardList(
+        boardId: bId,
+        title: listTitle,
+        position: currentLists.length,
+      );
+
+      if (boardIndex != -1 && !currentLists.contains(listTitle)) {
+        currentLists.add(listTitle);
+        (boards[boardIndex] as Map)['lists'] = currentLists;
+        notifyListeners();
+      }
+
+      await loadTasksForBoard(bId);
+      return true;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Load Semua Task Pengguna (untuk TasksTab)
+  Future<void> loadAllUserTasks(String userId) async {
+    final fetched = await TaskService.fetchAllUserTasks(userId);
+    tasks = fetched.map((raw) {
+      final board = raw['boards'] as Map? ?? {};
+      final List rawSubtasks = raw['subtasks'] as List? ?? [];
+      final List<Map<String, dynamic>> subtasksList = rawSubtasks
+          .map(
+            (s) => {
+              'id': s['id'],
+              'title': s['title'] ?? '',
+              'isDone': s['is_done'] ?? false,
+            },
+          )
+          .toList();
+
+      return {
+        'id': raw['id'].toString(),
+        'boardId': raw['board_id'].toString(),
+        'boardName': board['title'] ?? '',
+        'listName': raw['list_name'] ?? 'To Do',
+        'title': raw['title'] ?? '',
+        'status': raw['status'] ?? 'To Do',
+        'priority': raw['priority'] ?? 'Low',
+        'date': raw['due_date'] ?? 'No Date',
+        'desc': raw['description'] ?? '',
+        'isDone': raw['is_done'] ?? false,
+        'coverColor': raw['cover_color'],
+        'coverSize': raw['cover_size'] ?? 'header',
+        'startDate': raw['start_date'],
+        'startTime': raw['start_time'],
+        'dueDate': raw['due_date'],
+        'dueTime': raw['due_time'],
+        'reminder': raw['reminder'] ?? '1 hari sebelumnya',
+        'addMeToCard': false,
+        'subtasks': subtasksList,
+        'comments': [],
+        'attachments': [],
+        'members': [],
+      };
+    }).toList();
+
+    notifyListeners();
+  }
+
   // Helper pembuat inisial nama
   String _getInitials(String name) {
     if (name.isEmpty) return '?';
@@ -122,72 +270,7 @@ class AppDataController extends ChangeNotifier {
 
   List boards = [];
 
-  List tasks = [
-    {
-      'id': 't1',
-      'boardId': 'b1',
-      'listName': 'Tugas Harian',
-      'title': 'Tugas UI/UX - Wireframe',
-      'status': 'In Progress',
-      'priority': 'High',
-      'date': 'Today',
-      'desc': 'Buat rancangan wireframe low-fidelity.',
-      'isDone': false,
-      'coverColor': null,
-      'coverSize': 'header',
-      'startDate': '25 Okt',
-      'startTime': '08.00',
-      'dueDate': '26 Okt',
-      'dueTime': '23.59',
-      'reminder': '1 hari sebelumnya',
-      'addMeToCard': true,
-      'subtasks': [
-        {'title': 'Login Screen', 'isDone': true},
-        {'title': 'Home Screen', 'isDone': false},
-      ],
-      'comments': [
-        {
-          'author': 'Sari',
-          'text': 'Mohon disesuaikan dengan panduan warna utama ya.',
-          'time': '10:15',
-        },
-      ],
-      'attachments': [
-        {'name': 'LandingPage.fig', 'icon': Icons.image_rounded},
-        {'name': 'Desain-UI.pdf', 'icon': Icons.picture_as_pdf_rounded},
-        {'name': 'Referensi.png', 'icon': Icons.image_rounded},
-      ],
-      'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E},
-        {'name': 'Sari', 'color': 0xFF3B82F6},
-      ],
-    },
-    {
-      'id': 't2',
-      'boardId': 'b1',
-      'listName': 'Projek Akhir',
-      'title': 'Baca Jurnal',
-      'status': 'To Do',
-      'priority': 'Low',
-      'date': 'Tomorrow',
-      'desc': '',
-      'isDone': false,
-      'coverColor': null,
-      'coverSize': 'header',
-      'startDate': null,
-      'startTime': null,
-      'dueDate': null,
-      'dueTime': null,
-      'reminder': '1 hari sebelumnya',
-      'addMeToCard': false,
-      'subtasks': [],
-      'comments': [],
-      'attachments': [],
-      'members': [
-        {'name': 'Ilham', 'color': 0xFF0F766E},
-      ],
-    },
-  ];
+  List tasks = [];
 
   List notifications = [
     {
@@ -289,7 +372,9 @@ class AppDataController extends ChangeNotifier {
     final userId = currentUserProfile['id'];
     if (userId == null || userId.toString().isEmpty) return false;
 
-    final colorVal = color is Color ? color.value : (color as int? ?? 0xFF004D40);
+    final colorVal = color is Color
+        ? color.value
+        : (color as int? ?? 0xFF004D40);
 
     final newBoard = await BoardService.createBoard(
       title: title,
@@ -385,25 +470,14 @@ class AppDataController extends ChangeNotifier {
     return success;
   }
 
-  void addBoardList(String boardId, String listTitle) {
+  Future<void> renameBoardList(
+    String boardId,
+    String oldName,
+    String newName,
+  ) async {
+    final bId = boardId.toString();
     final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
-    );
-    if (board.isNotEmpty) {
-      final boardMap = board as Map;
-      final List currentLists = List.from(boardMap['lists'] ?? []);
-      if (!currentLists.contains(listTitle)) {
-        currentLists.add(listTitle);
-        boardMap['lists'] = currentLists;
-        notifyListeners();
-      }
-    }
-  }
-
-  void renameBoardList(String boardId, String oldName, String newName) {
-    final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
+      (b) => (b as Map)['id'].toString() == bId,
       orElse: () => {},
     );
     if (board.isNotEmpty) {
@@ -425,37 +499,57 @@ class AppDataController extends ChangeNotifier {
         }
         for (var task in tasks) {
           final taskMap = task as Map;
-          if (taskMap['boardId'] == boardId && taskMap['listName'] == oldName) {
+          if (taskMap['boardId'].toString() == bId &&
+              taskMap['listName'] == oldName) {
             taskMap['listName'] = newName;
           }
         }
         notifyListeners();
+
+        await TaskService.renameBoardList(
+          boardId: bId,
+          oldTitle: oldName,
+          newTitle: newName,
+        );
       }
     }
   }
 
-  void deleteBoardList(String boardId, String listName) {
-    final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
-    );
-    if (board.isNotEmpty) {
-      final boardMap = board as Map;
-      final List currentLists = List.from(boardMap['lists'] ?? []);
-      currentLists.remove(listName);
-      boardMap['lists'] = currentLists;
-      boardMap['lockedLists'] ??= [];
-      List lockedLists = List.from(boardMap['lockedLists']);
-      lockedLists.remove(listName);
-      boardMap['lockedLists'] = lockedLists;
-      tasks.removeWhere(
-        (t) => (t as Map)['boardId'] == boardId && t['listName'] == listName,
+  Future<void> deleteBoardList(String boardId, String listName) async {
+    final bId = boardId.toString();
+    try {
+      await TaskService.deleteBoardList(boardId: bId, title: listName);
+
+      final boardIndex = boards.indexWhere(
+        (b) => (b as Map)['id'].toString() == bId,
       );
+      if (boardIndex != -1) {
+        final boardMap = boards[boardIndex] as Map;
+        final List currentLists = List.from(boardMap['lists'] ?? []);
+        currentLists.remove(listName);
+        boardMap['lists'] = currentLists;
+
+        boardMap['lockedLists'] ??= [];
+        List lockedLists = List.from(boardMap['lockedLists']);
+        lockedLists.remove(listName);
+        boardMap['lockedLists'] = lockedLists;
+      }
+
+      tasks.removeWhere(
+        (t) =>
+            (t as Map)['boardId'].toString() == bId &&
+            t['listName'] == listName,
+      );
+
+      logActivity('Menghapus kolom list "$listName"');
       notifyListeners();
+    } catch (e) {
+      await loadTasksForBoard(bId);
+      rethrow;
     }
   }
 
-  void toggleListLock(String boardId, String listName) {
+  Future<void> toggleListLock(String boardId, String listName) async {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
       orElse: () => {},
@@ -464,13 +558,20 @@ class AppDataController extends ChangeNotifier {
       final boardMap = board as Map;
       boardMap['lockedLists'] ??= [];
       List lockedLists = List.from(boardMap['lockedLists']);
-      if (lockedLists.contains(listName)) {
-        lockedLists.remove(listName);
-      } else {
+      final bool willLock = !lockedLists.contains(listName);
+      if (willLock) {
         lockedLists.add(listName);
+      } else {
+        lockedLists.remove(listName);
       }
       boardMap['lockedLists'] = lockedLists;
       notifyListeners();
+
+      await TaskService.toggleBoardListLock(
+        boardId: boardId,
+        title: listName,
+        isLocked: willLock,
+      );
     }
   }
 
@@ -497,11 +598,11 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void moveTaskToList(
+  Future<void> moveTaskToList(
     String taskId,
     String targetListName, {
     int? targetIndex,
-  }) {
+  }) async {
     final taskIndex = tasks.indexWhere((t) => (t as Map)['id'] == taskId);
     if (taskIndex != -1) {
       final task = Map.from(tasks[taskIndex] as Map);
@@ -531,12 +632,33 @@ class AppDataController extends ChangeNotifier {
         logActivity('Memindahkan tugas "${task['title']}" ke $targetListName');
       }
       notifyListeners();
+
+      await TaskService.moveTask(
+        taskId: taskId,
+        targetListName: targetListName,
+        position: targetIndex,
+      );
     }
   }
 
-  void addTask(String boardId, String title, String listName) {
+  Future<void> addTask(String boardId, String title, String listName) async {
+    final userId = currentUserProfile['id'];
+    final rawRes = await TaskService.createTask(
+      boardId: boardId,
+      title: title,
+      listName: listName,
+      userId: userId.toString(),
+      position: tasks
+          .where((t) => t['boardId'] == boardId && t['listName'] == listName)
+          .length,
+    );
+
+    final taskId = rawRes != null
+        ? rawRes['id'].toString()
+        : 't_${DateTime.now().millisecondsSinceEpoch}';
+
     tasks.add({
-      'id': 't_${DateTime.now().millisecondsSinceEpoch}',
+      'id': taskId,
       'boardId': boardId,
       'listName': listName,
       'title': title,
@@ -562,7 +684,7 @@ class AppDataController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateTaskDesc(String taskId, String newDesc) {
+  Future<void> updateTaskDesc(String taskId, String newDesc) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -570,10 +692,11 @@ class AppDataController extends ChangeNotifier {
     if (task.isNotEmpty) {
       (task as Map)['desc'] = newDesc;
       notifyListeners();
+      await TaskService.updateTaskDetails(taskId, {'description': newDesc});
     }
   }
 
-  void toggleTaskCompletion(String taskId) {
+  Future<void> toggleTaskCompletion(String taskId) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -589,6 +712,7 @@ class AppDataController extends ChangeNotifier {
             : 'Membuka kembali tugas: "${taskMap['title']}"',
       );
       notifyListeners();
+      await TaskService.toggleTaskCompletion(taskId, taskMap['isDone']);
     }
   }
 
@@ -614,20 +738,32 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void addSubtask(String taskId, String title) {
+  Future<void> addSubtask(String taskId, String title) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
-      (taskMap['subtasks'] as List).add({'title': title, 'isDone': false});
+      final rawSubtask = await TaskService.addSubtask(
+        taskId: taskId,
+        title: title,
+      );
+      final subtaskId = rawSubtask != null
+          ? rawSubtask['id']
+          : 'sub_${DateTime.now().millisecondsSinceEpoch}';
+
+      (taskMap['subtasks'] as List).add({
+        'id': subtaskId,
+        'title': title,
+        'isDone': false,
+      });
       _updateTaskStatus(taskMap);
       notifyListeners();
     }
   }
 
-  void toggleSubtask(String taskId, int index) {
+  Future<void> toggleSubtask(String taskId, int index) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -640,11 +776,22 @@ class AppDataController extends ChangeNotifier {
         subtaskMap['isDone'] = !subtaskMap['isDone'];
         _updateTaskStatus(taskMap);
         notifyListeners();
+
+        if (subtaskMap['id'] != null) {
+          await TaskService.toggleSubtask(
+            subtaskMap['id'].toString(),
+            subtaskMap['isDone'],
+          );
+        }
       }
     }
   }
 
-  void setTaskCover(String taskId, Color? color, {String size = 'header'}) {
+  Future<void> setTaskCover(
+    String taskId,
+    Color? color, {
+    String size = 'header',
+  }) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -654,6 +801,11 @@ class AppDataController extends ChangeNotifier {
       taskMap['coverColor'] = color?.value;
       taskMap['coverSize'] = size;
       notifyListeners();
+
+      await TaskService.updateTaskDetails(taskId, {
+        'cover_color': color?.value,
+        'cover_size': size,
+      });
     }
   }
 
@@ -859,13 +1011,14 @@ class AppDataController extends ChangeNotifier {
 
   // Catatan: implementasi async deleteBoard sudah ada di atas
 
-  void addComment(String taskId, String text) {
+  Future<void> addComment(String taskId, String text) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
+      final userId = currentUserProfile['id']?.toString() ?? '';
       (taskMap['comments'] as List).add({
         'author': currentUserProfile['name'],
         'text': text,
@@ -873,10 +1026,18 @@ class AppDataController extends ChangeNotifier {
       });
       logActivity('Mengomentari tugas: "${taskMap['title']}"');
       notifyListeners();
+
+      if (userId.isNotEmpty) {
+        await TaskService.addComment(
+          taskId: taskId,
+          userId: userId,
+          text: text,
+        );
+      }
     }
   }
 
-  void setTaskStartDate(String taskId, String date, String time) {
+  Future<void> setTaskStartDate(String taskId, String date, String time) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -886,16 +1047,21 @@ class AppDataController extends ChangeNotifier {
       taskMap['startDate'] = date;
       taskMap['startTime'] = time;
       notifyListeners();
+
+      await TaskService.updateTaskDetails(taskId, {
+        'start_date': date == 'Tanggal' ? null : date,
+        'start_time': time == 'Waktu' ? null : time,
+      });
     }
   }
 
-  void setTaskDueDate(
+  Future<void> setTaskDueDate(
     String taskId,
     String date,
     String time,
     String reminder,
     bool addMeToCard,
-  ) {
+  ) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
       orElse: () => {},
@@ -908,6 +1074,13 @@ class AppDataController extends ChangeNotifier {
       taskMap['addMeToCard'] = addMeToCard;
       if (date != 'Tanggal') taskMap['date'] = date;
       notifyListeners();
+
+      await TaskService.updateTaskDetails(taskId, {
+        'due_date': date == 'Tanggal' ? null : date,
+        'due_time': time == 'Waktu' ? null : time,
+        'reminder': reminder,
+        'add_me_to_card': addMeToCard,
+      });
     }
   }
 }

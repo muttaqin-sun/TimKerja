@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../main.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -30,8 +34,57 @@ class _BoardScreenState extends State<BoardScreen> {
   String? _hoveredListName;
   String? _draggingTaskId;
 
+  RealtimeChannel? _boardChannel;
+
+  @override
+  void initState() {
+    super.initState();
+    // Muat daftar list & task terbaru dari Supabase saat layar dibuka
+    AppDataController.instance.loadTasksForBoard(widget.boardId);
+    _setupRealtimeSubscription();
+  }
+
+  void _setupRealtimeSubscription() {
+    _boardChannel = supabase
+        .channel('public:board_${widget.boardId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'board_lists',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'board_id',
+            value: widget.boardId,
+          ),
+          callback: (payload) {
+            if (mounted) {
+              AppDataController.instance.loadTasksForBoard(widget.boardId);
+            }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'tasks',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'board_id',
+            value: widget.boardId,
+          ),
+          callback: (payload) {
+            if (mounted) {
+              AppDataController.instance.loadTasksForBoard(widget.boardId);
+            }
+          },
+        )
+        .subscribe();
+  }
+
   @override
   void dispose() {
+    if (_boardChannel != null) {
+      supabase.removeChannel(_boardChannel!);
+    }
     _stopAutoScroll();
     _horizontalScrollController.dispose();
     super.dispose();
@@ -137,14 +190,15 @@ class _BoardScreenState extends State<BoardScreen> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () {
-                    if (titleCtrl.text.trim().isNotEmpty) {
-                      AppDataController.instance.addTask(
+                  onPressed: () async {
+                    final title = titleCtrl.text.trim();
+                    if (title.isNotEmpty) {
+                      Navigator.pop(context);
+                      await AppDataController.instance.addTask(
                         widget.boardId,
-                        titleCtrl.text.trim(),
+                        title,
                         listName,
                       );
-                      Navigator.pop(context);
                     }
                   },
                   child: const Text('Simpan'),
@@ -195,13 +249,34 @@ class _BoardScreenState extends State<BoardScreen> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () {
-                    if (listNameCtrl.text.trim().isNotEmpty) {
-                      AppDataController.instance.addBoardList(
-                        widget.boardId,
-                        listNameCtrl.text.trim(),
-                      );
+                  onPressed: () async {
+                    final name = listNameCtrl.text.trim();
+                    if (name.isNotEmpty) {
                       Navigator.pop(context);
+                      try {
+                        await AppDataController.instance.addBoardList(
+                          widget.boardId,
+                          name,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('List berhasil ditambahkan!'),
+                              backgroundColor: AppColors.primary,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Gagal buat list: $e'),
+                              backgroundColor: AppColors.error,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                   child: const Text('Buat List'),
@@ -274,45 +349,86 @@ class _BoardScreenState extends State<BoardScreen> {
 
   // Dialog Konfirmasi Hapus List
   void _showDeleteListConfirmation(String listName) {
+    bool isDeleting = false;
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Hapus List?',
-            style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
-          ),
-          content: Text(
-            'Apakah Anda yakin ingin menghapus kolom "$listName"? Semua task di dalamnya juga akan terhapus secara permanen.',
-            style: AppTextStyles.cardSubtitle,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Batal',
-                style: TextStyle(color: AppColors.textPrimary),
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-              onPressed: () {
-                AppDataController.instance.deleteBoardList(
-                  widget.boardId,
-                  listName,
-                );
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('List berhasil dihapus')),
-                );
-              },
-              child: const Text('Hapus'),
-            ),
-          ],
+              title: Text(
+                'Hapus List?',
+                style: AppTextStyles.cardTitle.copyWith(fontSize: 18),
+              ),
+              content: Text(
+                'Apakah Anda yakin ingin menghapus kolom "$listName"? Semua task di dalamnya juga akan terhapus secara permanen.',
+                style: AppTextStyles.cardSubtitle,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Batal',
+                    style: TextStyle(color: AppColors.textPrimary),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                  ),
+                  onPressed: isDeleting
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(this.context);
+                          setDialogState(() => isDeleting = true);
+                          try {
+                            await AppDataController.instance.deleteBoardList(
+                              widget.boardId,
+                              listName,
+                            );
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('List berhasil dihapus'),
+                                backgroundColor: AppColors.primary,
+                              ),
+                            );
+                          } catch (e) {
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Gagal menghapus list: $e'),
+                                backgroundColor: AppColors.error,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        },
+                  child: isDeleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text('Hapus'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -451,9 +567,6 @@ class _BoardScreenState extends State<BoardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isManager =
-        AppDataController.instance.currentUserRole == 'Pembuat Board';
-
     return ListenableBuilder(
       listenable: AppDataController.instance,
       builder: (context, _) {
@@ -461,18 +574,22 @@ class _BoardScreenState extends State<BoardScreen> {
           (b) => b['id'] == widget.boardId,
           orElse: () => {'title': widget.boardTitle, 'lists': <String>[]},
         );
+        final String currentUserId =
+            AppDataController.instance.currentUserProfile['id']?.toString() ??
+            '';
+        final bool isManager =
+            AppDataController.instance.currentUserRole == 'Pembuat Board' ||
+            (board['created_by'] != null &&
+                board['created_by'].toString() == currentUserId);
         final List<String> boardLists = List<String>.from(board['lists'] ?? []);
         final List<String> lockedLists = List<String>.from(
           board['lockedLists'] ?? [],
         );
-
         final List<Map<String, dynamic>> boardTasks = AppDataController
             .instance
             .tasks
             .where((t) => t['boardId'] == widget.boardId)
-            .map<Map<String, dynamic>>(
-              (task) => Map<String, dynamic>.from(task),
-            )
+            .map((task) => Map<String, dynamic>.from(task))
             .toList();
 
         return Scaffold(
@@ -635,6 +752,11 @@ class _BoardScreenState extends State<BoardScreen> {
                                       const SizedBox(width: 8),
                                       GestureDetector(
                                         onTap: () {
+                                          Clipboard.setData(
+                                            ClipboardData(
+                                              text: board['code'].toString(),
+                                            ),
+                                          );
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(

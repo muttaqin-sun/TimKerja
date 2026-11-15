@@ -18,6 +18,15 @@ class _TasksTabState extends State<TasksTab> {
   String _searchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    final userId = AppDataController.instance.currentUserProfile['id'];
+    if (userId != null && userId.toString().isNotEmpty) {
+      AppDataController.instance.loadAllUserTasks(userId.toString());
+    }
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
