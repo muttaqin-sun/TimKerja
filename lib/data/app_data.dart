@@ -156,6 +156,31 @@ class AppDataController extends ChangeNotifier {
         };
       }).toList();
 
+      final List<dynamic> rawAttachments =
+          raw['task_attachments'] as List? ?? [];
+      final List<Map<String, dynamic>> attachmentsList = rawAttachments
+          .map(
+            (a) => {
+              'id': a['id'].toString(),
+              'name': a['name'] ?? 'Lampiran',
+              'url': a['url'] ?? '',
+              'type': a['type'] ?? 'link',
+            },
+          )
+          .toList();
+
+      final List<dynamic> rawTaskMembers = raw['task_members'] as List? ?? [];
+      final List<Map<String, dynamic>> taskMembersList = rawTaskMembers.map((
+        m,
+      ) {
+        final prof = m['profiles'] as Map? ?? {};
+        return {
+          'userId': m['user_id'].toString(),
+          'name': prof['name'] ?? 'Member',
+          'color': prof['avatar_color'] ?? 0xFF0F766E,
+        };
+      }).toList();
+
       tasks.add({
         'id': raw['id'].toString(),
         'boardId': raw['board_id'].toString(),
@@ -176,8 +201,8 @@ class AppDataController extends ChangeNotifier {
         'addMeToCard': raw['add_me_to_card'] ?? false,
         'subtasks': subtasksList,
         'comments': commentsList,
-        'attachments': [],
-        'members': [],
+        'attachments': attachmentsList,
+        'members': taskMembersList,
       });
     }
 
@@ -337,7 +362,7 @@ class AppDataController extends ChangeNotifier {
   void markNotificationAsRead(String notifId) {
     final notif = notifications.firstWhere(
       (n) => (n as Map)['id'] == notifId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (notif.isNotEmpty && (notif as Map)['isRead'] == false) {
       notif['isRead'] = true;
@@ -427,7 +452,7 @@ class AppDataController extends ChangeNotifier {
     if (success) {
       final board = boards.firstWhere(
         (b) => (b as Map)['id'] == boardId,
-        orElse: () => {},
+        orElse: () => <String, dynamic>{},
       );
       if (board.isNotEmpty) {
         final boardMap = board as Map;
@@ -478,7 +503,7 @@ class AppDataController extends ChangeNotifier {
     final bId = boardId.toString();
     final board = boards.firstWhere(
       (b) => (b as Map)['id'].toString() == bId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -552,7 +577,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> toggleListLock(String boardId, String listName) async {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -643,51 +668,57 @@ class AppDataController extends ChangeNotifier {
 
   Future<void> addTask(String boardId, String title, String listName) async {
     final userId = currentUserProfile['id'];
-    final rawRes = await TaskService.createTask(
-      boardId: boardId,
-      title: title,
-      listName: listName,
-      userId: userId.toString(),
-      position: tasks
-          .where((t) => t['boardId'] == boardId && t['listName'] == listName)
-          .length,
-    );
+    try {
+      final rawRes = await TaskService.createTask(
+        boardId: boardId,
+        title: title,
+        listName: listName,
+        userId: userId.toString(),
+        position: tasks
+            .where((t) => t['boardId'] == boardId && t['listName'] == listName)
+            .length,
+      );
 
-    final taskId = rawRes != null
-        ? rawRes['id'].toString()
-        : 't_${DateTime.now().millisecondsSinceEpoch}';
+      final taskId = rawRes != null ? rawRes['id'].toString() : null;
+      if (taskId == null) {
+        throw Exception('Gagal mendapatkan ID task dari database.');
+      }
 
-    tasks.add({
-      'id': taskId,
-      'boardId': boardId,
-      'listName': listName,
-      'title': title,
-      'status': 'To Do',
-      'priority': 'Low',
-      'date': 'No Date',
-      'desc': '',
-      'isDone': false,
-      'coverColor': null,
-      'coverSize': 'header',
-      'startDate': null,
-      'startTime': null,
-      'dueDate': null,
-      'dueTime': null,
-      'reminder': '1 hari sebelumnya',
-      'addMeToCard': false,
-      'subtasks': [],
-      'comments': [],
-      'attachments': [],
-      'members': [],
-    });
-    logActivity('Menambahkan tugas: "$title"');
-    notifyListeners();
+      tasks.add({
+        'id': taskId,
+        'boardId': boardId,
+        'listName': listName,
+        'title': title,
+        'status': 'To Do',
+        'priority': 'Low',
+        'date': 'No Date',
+        'desc': '',
+        'isDone': false,
+        'coverColor': null,
+        'coverSize': 'header',
+        'startDate': null,
+        'startTime': null,
+        'dueDate': null,
+        'dueTime': null,
+        'reminder': '1 hari sebelumnya',
+        'addMeToCard': false,
+        'subtasks': [],
+        'comments': [],
+        'attachments': [],
+        'members': [],
+      });
+      logActivity('Menambahkan tugas: "$title"');
+      notifyListeners();
+    } catch (e) {
+      print('CRITICAL: addTask failed: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateTaskDesc(String taskId, String newDesc) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       (task as Map)['desc'] = newDesc;
@@ -699,7 +730,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> toggleTaskCompletion(String taskId) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -741,7 +772,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> addSubtask(String taskId, String title) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -766,7 +797,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> toggleSubtask(String taskId, int index) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -787,6 +818,28 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteSubtask(String taskId, int index) async {
+    final task = tasks.firstWhere(
+      (t) => (t as Map)['id'] == taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (task.isNotEmpty) {
+      final taskMap = task as Map;
+      final subtasks = taskMap['subtasks'] as List;
+      if (index >= 0 && index < subtasks.length) {
+        final subtaskMap = subtasks[index] as Map;
+        final subtaskId = subtaskMap['id']?.toString();
+        subtasks.removeAt(index);
+        _updateTaskStatus(taskMap);
+        notifyListeners();
+
+        if (subtaskId != null) {
+          await TaskService.deleteSubtask(subtaskId);
+        }
+      }
+    }
+  }
+
   Future<void> setTaskCover(
     String taskId,
     Color? color, {
@@ -794,7 +847,7 @@ class AppDataController extends ChangeNotifier {
   }) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -812,7 +865,7 @@ class AppDataController extends ChangeNotifier {
   void reorderBoardLists(String boardId, int oldIndex, int newIndex) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -830,7 +883,7 @@ class AppDataController extends ChangeNotifier {
   void addPoll(String boardId, String question, List options) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -851,7 +904,7 @@ class AppDataController extends ChangeNotifier {
   void votePoll(String boardId, String pollId, int optionIndex) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty && (board as Map)['polls'] != null) {
       final userName = currentUserProfile['name'] ?? 'Pengguna';
@@ -875,7 +928,7 @@ class AppDataController extends ChangeNotifier {
   void togglePollStatus(String boardId, String pollId) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty && (board as Map)['polls'] != null) {
       for (var poll in (board['polls'] as List)) {
@@ -892,7 +945,7 @@ class AppDataController extends ChangeNotifier {
   void deletePoll(String boardId, String pollId) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty && (board as Map)['polls'] != null) {
       (board['polls'] as List).removeWhere((p) => (p as Map)['id'] == pollId);
@@ -909,7 +962,7 @@ class AppDataController extends ChangeNotifier {
   }) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -926,7 +979,7 @@ class AppDataController extends ChangeNotifier {
   void addBoardMember(String boardId, String name, {int? color}) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -961,7 +1014,7 @@ class AppDataController extends ChangeNotifier {
   void removeBoardMember(String boardId, String memberName) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty && (board as Map)['members'] != null) {
       (board['members'] as List).removeWhere(
@@ -980,7 +1033,7 @@ class AppDataController extends ChangeNotifier {
   }) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty) {
       final boardMap = board as Map;
@@ -1001,7 +1054,7 @@ class AppDataController extends ChangeNotifier {
   void deleteBoardFile(String boardId, String fileId) {
     final board = boards.firstWhere(
       (b) => (b as Map)['id'] == boardId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (board.isNotEmpty && (board as Map)['files'] != null) {
       (board['files'] as List).removeWhere((f) => (f as Map)['id'] == fileId);
@@ -1014,7 +1067,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> addComment(String taskId, String text) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -1040,7 +1093,7 @@ class AppDataController extends ChangeNotifier {
   Future<void> setTaskStartDate(String taskId, String date, String time) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;
@@ -1064,7 +1117,7 @@ class AppDataController extends ChangeNotifier {
   ) async {
     final task = tasks.firstWhere(
       (t) => (t as Map)['id'] == taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     if (task.isNotEmpty) {
       final taskMap = task as Map;

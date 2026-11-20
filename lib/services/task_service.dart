@@ -130,7 +130,10 @@ class TaskService {
       // Ambil task dengan info board
       final res = await supabase
           .from('tasks')
-          .select('*, boards!inner(title, color), subtasks(*)')
+          .select(
+            '*, boards!inner(title, color board_members!inner(user_id)), subtasks(*)',
+          )
+          .eq('boards.board_members.user_id', userId)
           .order('created_at', ascending: false);
 
       return List<Map<String, dynamic>>.from(res);
@@ -163,9 +166,11 @@ class TaskService {
           .select('*, subtasks(*), task_comments(*)')
           .single();
 
+      print('DEBUG createTask [$boardId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR createTask [$boardId]: $e');
+      rethrow;
     }
   }
 
@@ -175,10 +180,16 @@ class TaskService {
     Map<String, dynamic> updates,
   ) async {
     try {
-      await supabase.from('tasks').update(updates).eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .update(updates)
+          .eq('id', taskId)
+          .select();
+      print('DEBUG updateTaskDetails [$taskId]: updates=$updates, result=$res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR updateTaskDetails [$taskId]: $e');
+      rethrow;
     }
   }
 
@@ -193,33 +204,48 @@ class TaskService {
       if (position != null) {
         payload['position'] = position;
       }
-      await supabase.from('tasks').update(payload).eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .update(payload)
+          .eq('id', taskId)
+          .select();
+      print('DEBUG moveTask [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR moveTask [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Mengubah status checklist task (selesai / belum)
   static Future<bool> toggleTaskCompletion(String taskId, bool isDone) async {
     try {
-      await supabase
+      final res = await supabase
           .from('tasks')
           .update({'is_done': isDone, 'status': isDone ? 'Done' : 'To Do'})
-          .eq('id', taskId);
-      return true;
+          .eq('id', taskId)
+          .select();
+      print('DEBUG toggleTaskCompletion [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR toggleTaskCompletion [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Menghapus task permanen
   static Future<bool> deleteTask(String taskId) async {
     try {
-      await supabase.from('tasks').delete().eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .delete()
+          .eq('id', taskId)
+          .select();
+      print('DEBUG deleteTask [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR deleteTask [$taskId]: $e');
+      rethrow;
     }
   }
 
@@ -234,22 +260,43 @@ class TaskService {
           .insert({'task_id': taskId, 'title': title, 'is_done': false})
           .select()
           .single();
+      print('DEBUG addSubtask [$taskId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR addSubtask [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Toggle centang subtask
   static Future<bool> toggleSubtask(String subtaskId, bool isDone) async {
     try {
-      await supabase
+      final res = await supabase
           .from('subtasks')
           .update({'is_done': isDone})
-          .eq('id', subtaskId);
-      return true;
+          .eq('id', subtaskId)
+          .select();
+      print('DEBUG toggleSubtask [$subtaskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR toggleSubtask [$subtaskId]: $e');
+      rethrow;
+    }
+  }
+
+  /// Menghapus subtask
+  static Future<bool> deleteSubtask(String subtaskId) async {
+    try {
+      final res = await supabase
+          .from('subtasks')
+          .delete()
+          .eq('id', subtaskId)
+          .select();
+      print('DEBUG deleteSubtask [$subtaskId]: $res');
+      return res.isNotEmpty;
+    } catch (e) {
+      print('ERROR deleteSubtask [$subtaskId]: $e');
+      rethrow;
     }
   }
 
@@ -265,9 +312,11 @@ class TaskService {
           .insert({'task_id': taskId, 'user_id': userId, 'text': text})
           .select('*, profiles(name, avatar_color)')
           .single();
+      print('DEBUG addComment [$taskId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR addComment [$taskId]: $e');
+      rethrow;
     }
   }
 }
