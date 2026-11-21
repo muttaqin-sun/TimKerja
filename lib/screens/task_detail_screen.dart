@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:async';
 
 import '../widgets/upload_progress_card.dart';
+import '../widgets/attachment_viewer.dart';
 
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1131,7 +1132,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
     return GestureDetector(
       onTap: () {
-        if (url.isNotEmpty) {
+        if (url.isEmpty) return;
+
+        if (type == 'image') {
+          AttachmentViewer.showImage(context, url: url, fileName: title);
+        } else if (type == 'file') {
+          AttachmentViewer.showFile(context, url: url, fileName: title);
+        } else {
           Clipboard.setData(ClipboardData(text: url));
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Tautan "$title" disalin ke clipboard')),

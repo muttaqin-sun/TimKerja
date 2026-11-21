@@ -28,6 +28,9 @@ dependencies:
   printing: ^5.15.1
   file_picker: ^13.4.0
   percent_indicator: ^4.2.5
+  dio: ^5.11.1
+  path_provider: ^2.1.6
+  open_filex: ^5.0.0
 
 # Package khusus kebutuhan pengembangan dan pengujian
 dev_dependencies:
