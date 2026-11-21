@@ -3,6 +3,15 @@ import 'package:flutter/material.dart';
 import '../data/app_data.dart';
 import '../theme/app_theme.dart';
 
+import 'dart:io';
+import 'dart:async';
+
+import '../widgets/upload_progress_card.dart';
+
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+
 class TaskDetailScreen extends StatefulWidget {
   final String taskId;
   const TaskDetailScreen({super.key, required this.taskId});
@@ -15,10 +24,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   late TextEditingController _descCtrl;
   final TextEditingController _subtaskCtrl = TextEditingController();
   final TextEditingController _commentCtrl = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   final FocusNode _descFocusNode = FocusNode();
   bool _isEditingDesc = false;
   String _tempDescValue = '';
+
+  // Ganti _isUploadingAttachment dengan 4 variabel berikut:
+  UploadStatus _uploadStatus = UploadStatus.idle;
+  double _uploadProgress = 0.0;
+  String _uploadingFileName = '';
+  String? _uploadErrorMsg;
 
   final List<Color> _coverColors = const [
     Color(0xFF61BD4F),
@@ -38,7 +54,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     super.initState();
     final task = AppDataController.instance.tasks.firstWhere(
       (t) => t['id'] == widget.taskId,
-      orElse: () => {},
+      orElse: () => <String, dynamic>{},
     );
     _tempDescValue = task['desc'] ?? '';
     _descCtrl = TextEditingController(text: _tempDescValue);
@@ -48,6 +64,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         _isEditingDesc = _descFocusNode.hasFocus;
       });
     });
+    // Tarik data lampiran terbaru dari Supabase saat halaman detail dibuka
+    AppDataController.instance.loadTaskAttachments(widget.taskId);
   }
 
   @override
@@ -56,6 +74,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _subtaskCtrl.dispose();
     _commentCtrl.dispose();
     _descFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -100,16 +119,146 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       );
       _commentCtrl.clear();
       FocusScope.of(context).unfocus();
+
+      // Auto-scroll ke komentar paling bawah
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
     }
   }
 
-  void _showAttachLinkDialog() {
+  Future<void> _pickPhotoFromCamera() async {
+    final picker = ImagePicker();
+    final XFile? photo = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+    );
+    if (photo == null) return;
+
+    setState(() {
+      _uploadStatus = UploadStatus.uploading;
+      _uploadProgress = 0.1;
+      _uploadingFileName = photo.name;
+      _uploadErrorMsg = null;
+    });
+
+    final timer = Timer.periodic(const Duration(milliseconds: 200), (t) {
+      if (!mounted || _uploadStatus != UploadStatus.uploading) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        if (_uploadProgress < 0.88) {
+          _uploadProgress += 0.08;
+        }
+      });
+    });
+
+    try {
+      await AppDataController.instance.uploadTaskFileAttachment(
+        widget.taskId,
+        file: File(photo.path),
+        fileName: photo.name,
+        type: 'image',
+      );
+      timer.cancel();
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1.0;
+          _uploadStatus = UploadStatus.success;
+        });
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && _uploadStatus == UploadStatus.success) {
+            setState(() => _uploadStatus = UploadStatus.idle);
+          }
+        });
+      }
+    } catch (e) {
+      timer.cancel();
+      if (mounted) {
+        setState(() {
+          _uploadStatus = UploadStatus.error;
+          _uploadErrorMsg = 'Gagal mengunggah foto';
+        });
+      }
+    }
+  }
+
+  Future<void> _pickDocumentFile() async {
+    final result = await FilePicker.pickFiles();
+    if (result.isEmpty || result.single.path == null) return;
+
+    final picked = result.single;
+    final String ext = (picked.extension ?? '').toLowerCase();
+    final bool isImg = ['jpg', 'jpeg', 'png', 'webp'].contains(ext);
+
+    setState(() {
+      _uploadStatus = UploadStatus.uploading;
+      _uploadProgress = 0.1;
+      _uploadingFileName = picked.name;
+      _uploadErrorMsg = null;
+    });
+
+    // Simulasi kenaikan bertahap 10% -> 88% selama proses upload berlangsung
+    final timer = Timer.periodic(const Duration(milliseconds: 200), (t) {
+      if (!mounted || _uploadStatus != UploadStatus.uploading) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        if (_uploadProgress < 0.88) {
+          _uploadProgress += 0.08;
+        }
+      });
+    });
+
+    try {
+      await AppDataController.instance.uploadTaskFileAttachment(
+        widget.taskId,
+        file: File(picked.path!),
+        fileName: picked.name,
+        type: isImg ? 'image' : 'file',
+      );
+      timer.cancel();
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1.0;
+          _uploadStatus = UploadStatus.success;
+        });
+        // Sembunyikan kartu setelah 2 detik menampilkan animasi centang sukses
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && _uploadStatus == UploadStatus.success) {
+            setState(() => _uploadStatus = UploadStatus.idle);
+          }
+        });
+      }
+    } catch (e) {
+      timer.cancel();
+      if (mounted) {
+        setState(() {
+          _uploadStatus = UploadStatus.error;
+          _uploadErrorMsg = 'Gagal mengunggah berkas';
+        });
+      }
+    }
+  }
+
+  void _showAttachLinkDialog({String initialUrl = ''}) {
+    final urlCtrl = TextEditingController(text: initialUrl);
+    final nameCtrl = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
           title: Text(
             'Attach a link',
@@ -121,6 +270,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Container(
                 color: Colors.grey.shade200,
                 child: TextField(
+                  controller: urlCtrl,
                   style: AppTextStyles.inputText.copyWith(fontSize: 14),
                   decoration: InputDecoration(
                     labelText: 'Paste any link here...',
@@ -140,6 +290,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Container(
                 color: Colors.grey.shade200,
                 child: TextField(
+                  controller: nameCtrl,
                   style: AppTextStyles.inputText.copyWith(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Link name (optional)',
@@ -159,7 +310,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text(
                 'CANCEL',
                 style: TextStyle(
@@ -169,11 +320,38 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
             ),
             TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Tautan ditambahkan')),
-                );
+              onPressed: () async {
+                final url = urlCtrl.text.trim();
+                if (url.isEmpty) return;
+                final title = nameCtrl.text.trim().isNotEmpty
+                    ? nameCtrl.text.trim()
+                    : url;
+                Navigator.pop(dialogContext);
+
+                try {
+                  await AppDataController.instance.addTaskLinkAttachment(
+                    widget.taskId,
+                    name: title,
+                    url: url,
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tautan ditambahkan'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Gagal menyimpan tautan: $e'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                }
               },
               child: const Text(
                 'OK',
@@ -196,7 +374,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -227,7 +405,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
+                    _pickPhotoFromCamera();
                   },
                 ),
                 ListTile(
@@ -244,7 +423,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
+                    _pickDocumentFile();
                   },
                 ),
                 ListTile(
@@ -260,9 +440,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       fontWeight: FontWeight.normal,
                     ),
                   ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showAttachLinkDialog();
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    final clipData = await Clipboard.getData(
+                      Clipboard.kTextPlain,
+                    );
+                    _showAttachLinkDialog(initialUrl: clipData?.text ?? '');
                   },
                 ),
                 ListTile(
@@ -279,7 +462,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     ),
                   ),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _showAttachLinkDialog();
                   },
                 ),
@@ -675,12 +858,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
+        int? modalColorVal = task['coverColor'] != null
+            ? int.tryParse(task['coverColor'].toString())
+            : null;
+        String modalSize = task['coverSize'] ?? 'header';
+
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final int? currentCoverVal = task['coverColor'];
-            final String currentSize = task['coverSize'] ?? 'header';
-            final Color? currentColor = currentCoverVal != null
-                ? Color(currentCoverVal)
+            final Color? currentColor = modalColorVal != null
+                ? Color(modalColorVal!)
                 : null;
 
             return SafeArea(
@@ -710,6 +896,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               color: AppColors.error,
                             ),
                             onPressed: () {
+                              setModalState(() {
+                                modalColorVal = null;
+                              });
                               AppDataController.instance.setTaskCover(
                                 widget.taskId,
                                 null,
@@ -735,13 +924,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   child: GestureDetector(
                                     onTap: () {
                                       if (currentColor != null) {
+                                        setModalState(() {
+                                          modalSize = 'header';
+                                        });
                                         AppDataController.instance.setTaskCover(
                                           widget.taskId,
                                           currentColor,
                                           size: 'header',
-                                        );
-                                        setModalState(
-                                          () => task['coverSize'] = 'header',
                                         );
                                       }
                                     },
@@ -752,12 +941,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                         borderRadius: AppRadius.roundedMd,
                                         border: Border.all(
                                           color:
-                                              currentSize == 'header' &&
+                                              modalSize == 'header' &&
                                                   currentColor != null
                                               ? AppColors.primary
                                               : AppColors.border,
                                           width:
-                                              currentSize == 'header' &&
+                                              modalSize == 'header' &&
                                                   currentColor != null
                                               ? 2
                                               : 1,
@@ -814,13 +1003,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   child: GestureDetector(
                                     onTap: () {
                                       if (currentColor != null) {
+                                        setModalState(() {
+                                          modalSize = 'full';
+                                        });
                                         AppDataController.instance.setTaskCover(
                                           widget.taskId,
                                           currentColor,
                                           size: 'full',
-                                        );
-                                        setModalState(
-                                          () => task['coverSize'] = 'full',
                                         );
                                       }
                                     },
@@ -834,12 +1023,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                         borderRadius: AppRadius.roundedMd,
                                         border: Border.all(
                                           color:
-                                              currentSize == 'full' &&
+                                              modalSize == 'full' &&
                                                   currentColor != null
                                               ? AppColors.primary
                                               : AppColors.border,
                                           width:
-                                              currentSize == 'full' &&
+                                              modalSize == 'full' &&
                                                   currentColor != null
                                               ? 2
                                               : 1,
@@ -878,17 +1067,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               spacing: 10,
                               runSpacing: 10,
                               children: _coverColors.map((color) {
-                                final isSelected =
-                                    currentColor?.value == color.value;
+                                final isSelected = modalColorVal == color.value;
                                 return GestureDetector(
                                   onTap: () {
+                                    setModalState(() {
+                                      modalColorVal = color.value;
+                                    });
                                     AppDataController.instance.setTaskCover(
                                       widget.taskId,
                                       color,
-                                      size: currentSize,
-                                    );
-                                    setModalState(
-                                      () => task['coverColor'] = color.value,
+                                      size: modalSize,
                                     );
                                   },
                                   child: Container(
@@ -903,7 +1091,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                       border: isSelected
                                           ? Border.all(
                                               color: AppColors.primary,
-                                              width: 2,
+                                              width: 2.5,
                                             )
                                           : null,
                                     ),
@@ -932,20 +1120,68 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return AppColors.textMuted;
   }
 
-  Widget _buildAttachmentCard(String title, IconData icon) {
+  Widget _buildAttachmentCard(Map<String, dynamic> att) {
+    final String type = (att['type'] ?? 'link').toString();
+    final String url = (att['url'] ?? '').toString();
+    final String title = (att['name'] ?? 'Lampiran').toString();
+
+    IconData iconData = Icons.link_rounded;
+    if (type == 'image') iconData = Icons.image_outlined;
+    if (type == 'file') iconData = Icons.insert_drive_file_outlined;
+
     return GestureDetector(
-      onTap: _showAttachmentBottomSheet,
+      onTap: () {
+        if (url.isNotEmpty) {
+          Clipboard.setData(ClipboardData(text: url));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Tautan "$title" disalin ke clipboard')),
+          );
+        }
+      },
+      onLongPress: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Hapus Lampiran?'),
+            content: Text('Hapus "$title" dari tugas ini?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Batal'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  AppDataController.instance.removeTaskAttachment(
+                    widget.taskId,
+                    att['id'].toString(),
+                  );
+                },
+                child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        );
+      },
       child: Column(
         children: [
           Container(
             width: 80,
             height: 80,
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: AppRadius.roundedMd,
               border: Border.all(color: AppColors.borderLight),
             ),
-            child: Icon(icon, color: AppColors.textMuted, size: 32),
+            child: (type == 'image' && url.isNotEmpty)
+                ? Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Icon(iconData, color: AppColors.primary, size: 32),
+                  )
+                : Icon(iconData, color: AppColors.primary, size: 32),
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -1002,7 +1238,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       builder: (context, _) {
         final task = AppDataController.instance.tasks.firstWhere(
           (t) => t['id'] == widget.taskId,
-          orElse: () => {'title': 'Tugas tidak ditemukan'},
+          orElse: () => <String, dynamic>{'title': 'Tugas tidak ditemukan'},
         );
 
         if (task['id'] == null)
@@ -1013,7 +1249,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         final subtasks = (task['subtasks'] as List?) ?? [];
         final comments = (task['comments'] as List?) ?? [];
         final attachments = (task['attachments'] as List?) ?? [];
-        final members = (task['members'] as List?) ?? [];
         final currentUser = AppDataController.instance.currentUserProfile;
 
         final completedSubtasks = subtasks
@@ -1021,11 +1256,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             .length;
         final board = AppDataController.instance.boards.firstWhere(
           (b) => b['id'] == task['boardId'],
-          orElse: () => {'title': 'Unknown'},
+          orElse: () => <String, dynamic>{'title': 'Unknown'},
         );
+        // Ambil daftar anggota asli dari board
+        final boardMembers = (board['members'] as List?) ?? [];
+        final members = (task['members'] as List?)?.isNotEmpty == true
+            ? (task['members'] as List)
+            : boardMembers;
         final String currentStatus = task['status'] ?? 'To Do';
 
-        final int? coverColorVal = task['coverColor'];
+        final int? coverColorVal = task['coverColor'] != null
+            ? int.tryParse(task['coverColor'].toString())
+            : null;
         final Color? coverColor = coverColorVal != null
             ? Color(coverColorVal)
             : null;
@@ -1071,6 +1313,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               Expanded(
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   padding: EdgeInsets.only(
                     left: AppSpacing.screenPadding.left,
                     right: AppSpacing.screenPadding.right,
@@ -1106,15 +1349,34 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppColors.border,
-                                  width: 2,
+                            GestureDetector(
+                              onTap: () {
+                                AppDataController.instance.toggleTaskCompletion(
+                                  widget.taskId,
+                                );
+                              },
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: task['isDone'] == true
+                                      ? AppColors.success
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: task['isDone'] == true
+                                        ? AppColors.success
+                                        : AppColors.border,
+                                    width: 2,
+                                  ),
                                 ),
+                                child: task['isDone'] == true
+                                    ? const Icon(
+                                        Icons.check_rounded,
+                                        color: Colors.white,
+                                        size: 24,
+                                      )
+                                    : null,
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -1352,6 +1614,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      UploadProgressCard(
+                        status: _uploadStatus,
+                        progress: _uploadProgress,
+                        fileName: _uploadingFileName,
+                        errorMessage: _uploadErrorMsg,
+                      ),
                       if (attachments.isEmpty)
                         Text(
                           'Belum ada lampiran.',
@@ -1366,8 +1634,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               return Padding(
                                 padding: const EdgeInsets.only(right: 12),
                                 child: _buildAttachmentCard(
-                                  att['name'],
-                                  att['icon'],
+                                  Map<String, dynamic>.from(att as Map),
                                 ),
                               );
                             }).toList(),
@@ -1409,6 +1676,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           contentPadding: EdgeInsets.zero,
                           controlAffinity: ListTileControlAffinity.leading,
                           visualDensity: VisualDensity.compact,
+                          secondary: IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 16),
+                            color: AppColors.textMuted,
+                            onPressed: () {
+                              AppDataController.instance.deleteSubtask(
+                                widget.taskId,
+                                index,
+                              );
+                            },
+                          ),
                           title: Text(
                             item['title'],
                             style: AppTextStyles.cardTitle.copyWith(

@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../main.dart';
 
 class TaskService {
@@ -130,9 +134,28 @@ class TaskService {
       // Ambil task dengan info board
       final res = await supabase
           .from('tasks')
-          .select('*, boards!inner(title, color), subtasks(*)')
+          .select(
+            '*, boards!inner(title, color board_members!inner(user_id)), subtasks(*)',
+          )
+          .eq('boards.board_members.user_id', userId)
           .order('created_at', ascending: false);
 
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Mengambil lampiran terbaru khusus untuk 1 task
+  static Future<List<Map<String, dynamic>>> fetchTaskAttachments(
+    String taskId,
+  ) async {
+    try {
+      final res = await supabase
+          .from('task_attachments')
+          .select()
+          .eq('task_id', taskId)
+          .order('created_at', ascending: true);
       return List<Map<String, dynamic>>.from(res);
     } catch (e) {
       return [];
@@ -163,9 +186,11 @@ class TaskService {
           .select('*, subtasks(*), task_comments(*)')
           .single();
 
+      print('DEBUG createTask [$boardId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR createTask [$boardId]: $e');
+      rethrow;
     }
   }
 
@@ -175,10 +200,16 @@ class TaskService {
     Map<String, dynamic> updates,
   ) async {
     try {
-      await supabase.from('tasks').update(updates).eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .update(updates)
+          .eq('id', taskId)
+          .select();
+      print('DEBUG updateTaskDetails [$taskId]: updates=$updates, result=$res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR updateTaskDetails [$taskId]: $e');
+      rethrow;
     }
   }
 
@@ -193,33 +224,48 @@ class TaskService {
       if (position != null) {
         payload['position'] = position;
       }
-      await supabase.from('tasks').update(payload).eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .update(payload)
+          .eq('id', taskId)
+          .select();
+      print('DEBUG moveTask [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR moveTask [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Mengubah status checklist task (selesai / belum)
   static Future<bool> toggleTaskCompletion(String taskId, bool isDone) async {
     try {
-      await supabase
+      final res = await supabase
           .from('tasks')
           .update({'is_done': isDone, 'status': isDone ? 'Done' : 'To Do'})
-          .eq('id', taskId);
-      return true;
+          .eq('id', taskId)
+          .select();
+      print('DEBUG toggleTaskCompletion [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR toggleTaskCompletion [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Menghapus task permanen
   static Future<bool> deleteTask(String taskId) async {
     try {
-      await supabase.from('tasks').delete().eq('id', taskId);
-      return true;
+      final res = await supabase
+          .from('tasks')
+          .delete()
+          .eq('id', taskId)
+          .select();
+      print('DEBUG deleteTask [$taskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR deleteTask [$taskId]: $e');
+      rethrow;
     }
   }
 
@@ -234,22 +280,43 @@ class TaskService {
           .insert({'task_id': taskId, 'title': title, 'is_done': false})
           .select()
           .single();
+      print('DEBUG addSubtask [$taskId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR addSubtask [$taskId]: $e');
+      rethrow;
     }
   }
 
   /// Toggle centang subtask
   static Future<bool> toggleSubtask(String subtaskId, bool isDone) async {
     try {
-      await supabase
+      final res = await supabase
           .from('subtasks')
           .update({'is_done': isDone})
-          .eq('id', subtaskId);
-      return true;
+          .eq('id', subtaskId)
+          .select();
+      print('DEBUG toggleSubtask [$subtaskId]: $res');
+      return res.isNotEmpty;
     } catch (e) {
-      return false;
+      print('ERROR toggleSubtask [$subtaskId]: $e');
+      rethrow;
+    }
+  }
+
+  /// Menghapus subtask
+  static Future<bool> deleteSubtask(String subtaskId) async {
+    try {
+      final res = await supabase
+          .from('subtasks')
+          .delete()
+          .eq('id', subtaskId)
+          .select();
+      print('DEBUG deleteSubtask [$subtaskId]: $res');
+      return res.isNotEmpty;
+    } catch (e) {
+      print('ERROR deleteSubtask [$subtaskId]: $e');
+      rethrow;
     }
   }
 
@@ -265,9 +332,67 @@ class TaskService {
           .insert({'task_id': taskId, 'user_id': userId, 'text': text})
           .select('*, profiles(name, avatar_color)')
           .single();
+      print('DEBUG addComment [$taskId]: $res');
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      return null;
+      print('ERROR addComment [$taskId]: $e');
+      rethrow;
     }
+  }
+
+  /// Upload file/foto ke Supabase Storage lalu simpan tautannya ke task_attachments
+  static Future<Map<String, dynamic>?> uploadAndAttachFile({
+    required String taskId,
+    required File file,
+    required String fileName,
+    required String type, // 'image' atau 'file'
+  }) async {
+    final String ext = fileName.contains('.')
+        ? fileName.split('.').last
+        : 'bin';
+    final String storagePath =
+        '$taskId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    // 1. Upload fisik berkas ke bucket 'task-attachments'
+    await supabase.storage
+        .from('task-attachments')
+        .upload(
+          storagePath,
+          file,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    // 2. Ambil Public URL
+    final String publicUrl = supabase.storage
+        .from('task-attachments')
+        .getPublicUrl(storagePath);
+
+    // 3. Simpan catatan lampiran ke tabel task_attachments
+    return await addTaskAttachment(
+      taskId: taskId,
+      name: fileName,
+      url: publicUrl,
+      type: type,
+    );
+  }
+
+  /// Simpan lampiran (tautan maupun file) ke tabel task_attachments
+  static Future<Map<String, dynamic>?> addTaskAttachment({
+    required String taskId,
+    required String name,
+    required String url,
+    String type = 'link',
+  }) async {
+    final res = await supabase
+        .from('task_attachments')
+        .insert({'task_id': taskId, 'name': name, 'url': url, 'type': type})
+        .select()
+        .single();
+    return Map<String, dynamic>.from(res);
+  }
+
+  /// Hapus lampiran dari database
+  static Future<void> deleteTaskAttachment(String attachmentId) async {
+    await supabase.from('task_attachments').delete().eq('id', attachmentId);
   }
 }
