@@ -1,3 +1,7 @@
+import 'dart:io';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../main.dart';
 
 class TaskService {
@@ -136,6 +140,22 @@ class TaskService {
           .eq('boards.board_members.user_id', userId)
           .order('created_at', ascending: false);
 
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Mengambil lampiran terbaru khusus untuk 1 task
+  static Future<List<Map<String, dynamic>>> fetchTaskAttachments(
+    String taskId,
+  ) async {
+    try {
+      final res = await supabase
+          .from('task_attachments')
+          .select()
+          .eq('task_id', taskId)
+          .order('created_at', ascending: true);
       return List<Map<String, dynamic>>.from(res);
     } catch (e) {
       return [];
@@ -318,5 +338,61 @@ class TaskService {
       print('ERROR addComment [$taskId]: $e');
       rethrow;
     }
+  }
+
+  /// Upload file/foto ke Supabase Storage lalu simpan tautannya ke task_attachments
+  static Future<Map<String, dynamic>?> uploadAndAttachFile({
+    required String taskId,
+    required File file,
+    required String fileName,
+    required String type, // 'image' atau 'file'
+  }) async {
+    final String ext = fileName.contains('.')
+        ? fileName.split('.').last
+        : 'bin';
+    final String storagePath =
+        '$taskId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    // 1. Upload fisik berkas ke bucket 'task-attachments'
+    await supabase.storage
+        .from('task-attachments')
+        .upload(
+          storagePath,
+          file,
+          fileOptions: const FileOptions(upsert: true),
+        );
+
+    // 2. Ambil Public URL
+    final String publicUrl = supabase.storage
+        .from('task-attachments')
+        .getPublicUrl(storagePath);
+
+    // 3. Simpan catatan lampiran ke tabel task_attachments
+    return await addTaskAttachment(
+      taskId: taskId,
+      name: fileName,
+      url: publicUrl,
+      type: type,
+    );
+  }
+
+  /// Simpan lampiran (tautan maupun file) ke tabel task_attachments
+  static Future<Map<String, dynamic>?> addTaskAttachment({
+    required String taskId,
+    required String name,
+    required String url,
+    String type = 'link',
+  }) async {
+    final res = await supabase
+        .from('task_attachments')
+        .insert({'task_id': taskId, 'name': name, 'url': url, 'type': type})
+        .select()
+        .single();
+    return Map<String, dynamic>.from(res);
+  }
+
+  /// Hapus lampiran dari database
+  static Future<void> deleteTaskAttachment(String attachmentId) async {
+    await supabase.from('task_attachments').delete().eq('id', attachmentId);
   }
 }

@@ -4,6 +4,8 @@ import '../services/profile_service.dart';
 import '../services/board_service.dart';
 import '../services/task_service.dart';
 
+import 'dart:io';
+
 class AppDataController extends ChangeNotifier {
   static final AppDataController instance = AppDataController._internal();
   AppDataController._internal();
@@ -281,6 +283,28 @@ class AppDataController extends ChangeNotifier {
     }).toList();
 
     notifyListeners();
+  }
+
+  /// Segarkan daftar lampiran dari Supabase untuk task yang sedang dibuka
+  Future<void> loadTaskAttachments(String taskId) async {
+    final rawAttachments = await TaskService.fetchTaskAttachments(taskId);
+    final task = tasks.firstWhere(
+      (t) => t['id'].toString() == taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (task.isNotEmpty) {
+      task['attachments'] = rawAttachments
+          .map(
+            (a) => {
+              'id': a['id'].toString(),
+              'name': a['name'] ?? 'Lampiran',
+              'url': a['url'] ?? '',
+              'type': a['type'] ?? 'link',
+            },
+          )
+          .toList();
+      notifyListeners();
+    }
   }
 
   // Helper pembuat inisial nama
@@ -1106,6 +1130,81 @@ class AppDataController extends ChangeNotifier {
         'start_time': time == 'Waktu' ? null : time,
       });
     }
+  }
+
+  Future<void> addTaskLinkAttachment(
+    String taskId, {
+    required String name,
+    required String url,
+  }) async {
+    final task = tasks.firstWhere(
+      (t) => t['id'].toString() == taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (task.isEmpty) return;
+
+    final res = await TaskService.addTaskAttachment(
+      taskId: taskId,
+      name: name,
+      url: url,
+      type: 'link',
+    );
+
+    if (res != null) {
+      (task['attachments'] as List).add({
+        'id': res['id'].toString(),
+        'name': res['name'],
+        'url': res['url'],
+        'type': 'link',
+      });
+      logActivity('Melampirkan tautan "$name" pada "${task['title']}"');
+      notifyListeners();
+    }
+  }
+
+  Future<void> uploadTaskFileAttachment(
+    String taskId, {
+    required File file,
+    required String fileName,
+    required String type,
+  }) async {
+    final task = tasks.firstWhere(
+      (t) => t['id'].toString() == taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (task.isEmpty) return;
+
+    final res = await TaskService.uploadAndAttachFile(
+      taskId: taskId,
+      file: file,
+      fileName: fileName,
+      type: type,
+    );
+
+    if (res != null) {
+      (task['attachments'] as List).add({
+        'id': res['id'].toString(),
+        'name': res['name'],
+        'url': res['url'],
+        'type': res['type'] ?? type,
+      });
+      logActivity('Mengunggah lampiran "$fileName" pada "${task['title']}"');
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeTaskAttachment(String taskId, String attachmentId) async {
+    final task = tasks.firstWhere(
+      (t) => t['id'].toString() == taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (task.isEmpty) return;
+
+    (task['attachments'] as List).removeWhere(
+      (a) => a['id'].toString() == attachmentId,
+    );
+    notifyListeners();
+    await TaskService.deleteTaskAttachment(attachmentId);
   }
 
   Future<void> setTaskDueDate(

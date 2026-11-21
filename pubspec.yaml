@@ -27,6 +27,7 @@ dependencies:
   pdf: ^3.13.1
   printing: ^5.15.1
   file_picker: ^13.4.0
+  percent_indicator: ^4.2.5
 
 # Package khusus kebutuhan pengembangan dan pengujian
 dev_dependencies:
