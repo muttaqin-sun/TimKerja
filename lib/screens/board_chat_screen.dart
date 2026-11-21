@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../data/app_data.dart';
+import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/top_decor_blob.dart';
 
 class BoardChatScreen extends StatefulWidget {
+  final String boardId;
   final String boardTitle;
 
-  const BoardChatScreen({super.key, required this.boardTitle});
+  const BoardChatScreen({
+    super.key,
+    required this.boardId,
+    required this.boardTitle,
+  });
 
   @override
   State<BoardChatScreen> createState() => _BoardChatScreenState();
@@ -14,68 +22,188 @@ class BoardChatScreen extends StatefulWidget {
 
 class _BoardChatScreenState extends State<BoardChatScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final List<Map<String, dynamic>> _messages = [];
+  bool _isLoading = true;
+  bool _isSending = false;
+  RealtimeChannel? _chatChannel;
 
-  // PERUBAHAN 1: Urutan data dibalik (Pesan terbaru ditaruh di paling atas / index 0)
-  final List _messages = [
-    {
-      'sender': 'Ilham',
-      'initial': 'I',
-      'color': const Color(0xFF00A896),
-      'time': '09.32',
-      'text': 'Oke, makasih semuanya 🙏',
-      'isMe': true,
-    },
-    {
-      'sender': 'Budi',
-      'initial': 'B',
-      'color': const Color(0xFF10B981), // Hijau
-      'time': '09.20',
-      'text': 'Baik, nanti saya bantu cek materinya.',
-      'isMe': false,
-    },
-    {
-      'sender': 'Ilham',
-      'initial': 'I',
-      'color': const Color(0xFF00A896), // Tosca
-      'time': '09.18',
-      'text': 'Materinya sudah saya susun, tinggal bagian desain slide.',
-      'isMe': true,
-    },
-    {
-      'sender': 'Sari',
-      'initial': 'S',
-      'color': const Color(0xFF3B82F6), // Biru
-      'time': '09.15',
-      'text': 'Teman-teman, untuk tugas presentasi sudah sampai mana?',
-      'isMe': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+    _setupRealtimeSubscription();
+  }
 
   @override
   void dispose() {
+    _chatChannel?.unsubscribe();
     _messageController.dispose();
     super.dispose();
   }
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isNotEmpty) {
+  Future<void> _loadMessages() async {
+    final fetched = await ChatService.fetchMessages(widget.boardId);
+    if (mounted) {
       setState(() {
-        // PERUBAHAN 2: Gunakan insert(0) agar pesan baru masuk ke index 0 (paling bawah di layar)
-        _messages.insert(0, {
-          'sender': 'Ilham',
-          'initial': 'I',
-          'color': const Color(0xFF00A896),
-          'time': '09.35', // Dummy waktu terbaru
-          'text': _messageController.text.trim(),
-          'isMe': true,
-        });
-        _messageController.clear();
+        _messages.clear();
+        _messages.addAll(fetched);
+        _isLoading = false;
       });
+    }
+  }
+
+  void _setupRealtimeSubscription() {
+    _chatChannel = ChatService.subscribeToBoardMessages(
+      boardId: widget.boardId,
+      onInsert: (newRecord) async {
+        // Cek jika pesan sudah ada di list untuk menghindari duplikasi
+        final messageId = newRecord['id'];
+        if (_messages.any((m) => m['id'] == messageId)) return;
+
+        // Ambil info profil pengirim jika belum ada di payload realtime
+        Map<String, dynamic> completeMessage = Map<String, dynamic>.from(
+          newRecord,
+        );
+        if (completeMessage['profiles'] == null) {
+          final senderId = completeMessage['sender_id'];
+          // Cek dari members di board controller atau fetch
+          final dynamic foundBoard = AppDataController.instance.boards
+              .firstWhere(
+                (b) => b['id'].toString() == widget.boardId,
+                orElse: () => <String, dynamic>{},
+              );
+          final board = foundBoard is Map ? foundBoard : {};
+          final members = (board['members'] as List?) ?? [];
+          final dynamic foundMember = members.firstWhere(
+            (m) => m is Map && m['userId'].toString() == senderId.toString(),
+            orElse: () => <String, dynamic>{},
+          );
+          final member = foundMember is Map ? foundMember : null;
+
+          if (member != null) {
+            completeMessage['profiles'] = {
+              'name': member['name'],
+              'avatar_color': member['color'],
+            };
+          } else {
+            completeMessage['profiles'] = {
+              'name': 'Anggota',
+              'avatar_color': 0xFF00A896,
+            };
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _messages.insert(0, completeMessage);
+          });
+        }
+      },
+    );
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _isSending) return;
+
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentProfile = AppDataController.instance.currentUserProfile;
+    final userId = currentUser?.id ?? currentProfile['id']?.toString() ?? '';
+
+    if (userId.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Anda belum login')));
+      return;
+    }
+
+    _messageController.clear();
+    setState(() => _isSending = true);
+
+    try {
+      final sentMessage = await ChatService.sendMessage(
+        boardId: widget.boardId,
+        senderId: userId,
+        text: text,
+      );
+
+      if (sentMessage != null && mounted) {
+        // Jika belum ada di list (belum masuk dari stream), tambahkan langsung
+        if (!_messages.any((m) => m['id'] == sentMessage['id'])) {
+          setState(() {
+            _messages.insert(0, sentMessage);
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengirim pesan: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+    }
+  }
+
+  String _formatTime(dynamic createdAt) {
+    if (createdAt == null) return '';
+    try {
+      final dt = DateTime.parse(createdAt.toString()).toLocal();
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$hour.$minute';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String _formatDateHeader(dynamic createdAt) {
+    if (createdAt == null) return 'Hari ini';
+    try {
+      final dt = DateTime.parse(createdAt.toString()).toLocal();
+      const monthNames = [
+        'Januari',
+        'Februari',
+        'Maret',
+        'April',
+        'Mei',
+        'Juni',
+        'Juli',
+        'Agustus',
+        'September',
+        'Oktober',
+        'November',
+        'Desember',
+      ];
+      final now = DateTime.now();
+      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+        return 'Hari ini, ${dt.day} ${monthNames[dt.month - 1]} ${dt.year}';
+      }
+      return '${dt.day} ${monthNames[dt.month - 1]} ${dt.year}';
+    } catch (_) {
+      return 'Riwayat Chat';
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId =
+        Supabase.instance.client.auth.currentUser?.id ??
+        AppDataController.instance.currentUserProfile['id']?.toString() ??
+        '';
+
+    final dynamic foundBoard = AppDataController.instance.boards.firstWhere(
+      (b) => b['id'].toString() == widget.boardId,
+      orElse: () => <String, dynamic>{},
+    );
+    final board = foundBoard is Map ? foundBoard : {};
+    final List members = List.from(board['members'] ?? []);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -138,7 +266,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                   ),
                 ),
 
-                // 2. INFO ANGGOTA & WAKTU (Pill info)
+                // 2. INFO ANGGOTA & JUMLAH (Pill info)
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20.0,
@@ -146,7 +274,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                   ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: 12,
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
@@ -162,45 +290,55 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                       children: [
                         Row(
                           children: [
-                            _buildMiniAvatar('I', const Color(0xFF00A896)),
-                            Transform.translate(
-                              offset: const Offset(-8, 0),
-                              child: _buildMiniAvatar(
-                                'S',
-                                const Color(0xFF3B82F6),
-                              ),
-                            ),
-                            Transform.translate(
-                              offset: const Offset(-16, 0),
-                              child: _buildMiniAvatar(
-                                'B',
-                                const Color(0xFF10B981),
-                              ),
-                            ),
-                            Transform.translate(
-                              offset: const Offset(-24, 0),
-                              child: Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.borderLight,
+                            if (members.isNotEmpty)
+                              ...members.take(3).toList().asMap().entries.map((
+                                entry,
+                              ) {
+                                final index = entry.key;
+                                final m = entry.value as Map;
+                                final name = m['name']?.toString() ?? 'U';
+                                final initial = name.isNotEmpty
+                                    ? name[0].toUpperCase()
+                                    : 'U';
+                                final colorVal = m['color'] is int
+                                    ? m['color'] as int
+                                    : 0xFF00A896;
+
+                                return Transform.translate(
+                                  offset: Offset(-8.0 * index, 0),
+                                  child: _buildMiniAvatar(
+                                    initial,
+                                    Color(colorVal),
                                   ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '+1',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.textMuted,
-                                      fontWeight: FontWeight.bold,
+                                );
+                              })
+                            else
+                              _buildMiniAvatar('U', const Color(0xFF00A896)),
+                            if (members.length > 3)
+                              Transform.translate(
+                                offset: Offset(-8.0 * 3, 0),
+                                child: Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: AppColors.borderLight,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '+${members.length - 3}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.textMuted,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         Row(
@@ -212,7 +350,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              '4 anggota dalam Board',
+                              '${members.length > 0 ? members.length : 1} anggota dalam Board',
                               style: AppTextStyles.cardSubtitle.copyWith(
                                 fontSize: 12,
                               ),
@@ -220,7 +358,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                           ],
                         ),
                         const Padding(
-                          padding: EdgeInsets.only(right: 8.0),
+                          padding: EdgeInsets.only(right: 4.0),
                           child: Icon(
                             Icons.info_outline_rounded,
                             color: AppColors.primary,
@@ -234,51 +372,109 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
 
                 // 3. DAFTAR CHAT (List)
                 Expanded(
-                  child: ListView.builder(
-                    // PERUBAHAN 3: Aktifkan reverse agar list menempel di bawah dan ikut naik saat keyboard muncul
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 16,
-                    ),
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _messages.length + 1, // +1 untuk badge tanggal
-                    itemBuilder: (context, index) {
-                      // PERUBAHAN 4: Karena reverse=true, index terakhir adalah posisi paling atas layar
-                      if (index == _messages.length) {
-                        return Center(
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 24, top: 16),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceMuted.withOpacity(0.6),
-                              borderRadius: AppRadius.roundedPill,
-                            ),
-                            child: Text(
-                              'Hari ini, 1 November 2026',
-                              style: AppTextStyles.cardSubtitle.copyWith(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                  child: _isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
                           ),
-                        );
-                      }
+                        )
+                      : _messages.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 48,
+                                color: AppColors.textMuted.withOpacity(0.4),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Belum ada percakapan di board ini.',
+                                style: AppTextStyles.cardSubtitle,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Mulai kirim pesan pertama Anda!',
+                                style: AppTextStyles.cardSubtitle.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 16,
+                          ),
+                          physics: const BouncingScrollPhysics(),
+                          itemCount:
+                              _messages.length + 1, // +1 untuk badge tanggal
+                          itemBuilder: (context, index) {
+                            if (index == _messages.length) {
+                              final oldestMsg = _messages.isNotEmpty
+                                  ? _messages.last['created_at']
+                                  : null;
+                              return Center(
+                                child: Container(
+                                  margin: const EdgeInsets.only(
+                                    bottom: 24,
+                                    top: 16,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceMuted.withOpacity(
+                                      0.6,
+                                    ),
+                                    borderRadius: AppRadius.roundedPill,
+                                  ),
+                                  child: Text(
+                                    _formatDateHeader(oldestMsg),
+                                    style: AppTextStyles.cardSubtitle.copyWith(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
 
-                      final msg = _messages[index];
-                      return _buildChatBubble(
-                        text: msg['text'],
-                        sender: msg['sender'],
-                        initial: msg['initial'],
-                        time: msg['time'],
-                        color: msg['color'],
-                        isMe: msg['isMe'],
-                      );
-                    },
-                  ),
+                            final msg = _messages[index];
+                            final senderId = msg['sender_id']?.toString() ?? '';
+                            final isMe =
+                                senderId.isNotEmpty &&
+                                senderId == currentUserId;
+
+                            final profile = msg['profiles'] as Map? ?? {};
+                            final senderName =
+                                profile['name']?.toString() ??
+                                (isMe ? 'Saya' : 'Anggota');
+                            final initial = senderName.isNotEmpty
+                                ? senderName[0].toUpperCase()
+                                : 'A';
+
+                            final colorVal = profile['avatar_color'] is int
+                                ? profile['avatar_color'] as int
+                                : (isMe ? 0xFF00A896 : 0xFF3B82F6);
+
+                            final timeStr = _formatTime(msg['created_at']);
+
+                            return _buildChatBubble(
+                              text: msg['text']?.toString() ?? '',
+                              sender: isMe ? 'Saya' : senderName,
+                              initial: initial,
+                              time: timeStr,
+                              color: Color(colorVal),
+                              isMe: isMe,
+                            );
+                          },
+                        ),
                 ),
 
                 // 4. INPUT AREA
@@ -334,18 +530,29 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                       ),
                       const SizedBox(width: 12),
                       GestureDetector(
-                        onTap: _sendMessage,
+                        onTap: _isSending ? null : _sendMessage,
                         child: Container(
                           padding: const EdgeInsets.all(12),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
+                          decoration: BoxDecoration(
+                            color: _isSending
+                                ? AppColors.primary.withOpacity(0.5)
+                                : AppColors.primary,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.send_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                          child: _isSending
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.send_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                         ),
                       ),
                     ],
@@ -389,7 +596,6 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
     required Color color,
     required bool isMe,
   }) {
-    // Sedikit penyesuaian padding karena reverse: true membalik arah render
     return Padding(
       padding: const EdgeInsets.only(top: 20.0),
       child: Row(
@@ -427,20 +633,24 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                       sender,
                       style: AppTextStyles.cardTitle.copyWith(fontSize: 11),
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      width: 3,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: AppColors.textMuted,
-                        shape: BoxShape.circle,
+                    if (time.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 3,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: AppColors.textMuted,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      time,
-                      style: AppTextStyles.cardSubtitle.copyWith(fontSize: 10),
-                    ),
+                      const SizedBox(width: 6),
+                      Text(
+                        time,
+                        style: AppTextStyles.cardSubtitle.copyWith(
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),

@@ -194,11 +194,22 @@ class _BoardScreenState extends State<BoardScreen> {
                     final title = titleCtrl.text.trim();
                     if (title.isNotEmpty) {
                       Navigator.pop(context);
-                      await AppDataController.instance.addTask(
-                        widget.boardId,
-                        title,
-                        listName,
-                      );
+                      try {
+                        await AppDataController.instance.addTask(
+                          widget.boardId,
+                          title,
+                          listName,
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Gagal menambah task ke DB: $e'),
+                            backgroundColor: AppColors.error,
+                            duration: const Duration(seconds: 4),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('Simpan'),
@@ -899,8 +910,10 @@ class _BoardScreenState extends State<BoardScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      BoardChatScreen(boardTitle: widget.boardTitle),
+                  builder: (_) => BoardChatScreen(
+                    boardId: widget.boardId,
+                    boardTitle: widget.boardTitle,
+                  ),
                 ),
               );
             },
