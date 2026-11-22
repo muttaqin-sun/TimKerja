@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/profile_service.dart';
 import '../services/board_service.dart';
 import '../services/task_service.dart';
+import '../services/poll_service.dart';
 
 import 'dart:io';
 
@@ -904,76 +905,152 @@ class AppDataController extends ChangeNotifier {
     }
   }
 
-  void addPoll(String boardId, String question, List options) {
+  /// Muat semua polling untuk board tertentu dari Supabase
+  /// Muat semua polling untuk board tertentu dari Supabase
+  Future<void> loadPollsForBoard(String boardId) async {
+    final fetched = await PollService.fetchPollsByBoard(boardId);
     final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
+      (b) => b['id'].toString() == boardId,
       orElse: () => <String, dynamic>{},
     );
+
     if (board.isNotEmpty) {
-      final boardMap = board as Map;
-      boardMap['polls'] ??= [];
-      (boardMap['polls'] as List).add({
-        'id': 'poll_${DateTime.now().millisecondsSinceEpoch}',
-        'question': question,
-        'creator': currentUserProfile['name'] ?? 'Pengguna',
-        'createdAt': 'Hari ini',
-        'isClosed': false,
-        'options': options.map((opt) => {'text': opt, 'votes': []}).toList(),
-      });
+      final List boardMembers = (board['members'] as List?) ?? [];
+
+      board['polls'] = fetched.map((raw) {
+        final String creatorId = raw['created_by']?.toString() ?? '';
+        final memberMatch = boardMembers.firstWhere(
+          (m) => m['userId']?.toString() == creatorId,
+          orElse: () => <String, dynamic>{},
+        );
+        final String creatorName = memberMatch['name']?.toString() ?? 'Anggota';
+
+        final List rawOptions = List.from(raw['poll_options'] as List? ?? []);
+        rawOptions.sort(
+          (a, b) => (a['position'] ?? 0).compareTo(b['position'] ?? 0),
+        );
+
+        final List rawVotes = raw['poll_votes'] as List? ?? [];
+        final DateTime? dueDate = raw['due_date'] != null
+            ? DateTime.tryParse(raw['due_date'].toString())
+            : null;
+        final bool isExpired =
+            dueDate != null && DateTime.now().isAfter(dueDate);
+
+        final List<Map<String, dynamic>> normalizedOptions = rawOptions.map((
+          opt,
+        ) {
+          final String optId = opt['id'].toString();
+          final List<String> voterIds = rawVotes
+              .where((v) => v['option_id'].toString() == optId)
+              .map((v) => v['user_id'].toString())
+              .toList();
+
+          return {
+            'id': optId,
+            'title': opt['option_text']?.toString() ?? 'Opsi',
+            'votes': voterIds,
+          };
+        }).toList();
+
+        return {
+          'id': raw['id'].toString(),
+          'boardId': raw['board_id'].toString(),
+          'question': raw['question']?.toString() ?? '',
+          'creator': creatorName,
+          'createdBy': creatorId,
+          'createdAt': raw['created_at']?.toString(),
+          'dueDate': dueDate,
+          'showResultBeforeVote': raw['show_result_before_vote'] ?? true,
+          'notifyOnEnd': raw['notify_on_end'] ?? false,
+          'isClosed': isExpired,
+          'options': normalizedOptions,
+        };
+      }).toList();
+
+      notifyListeners();
+    }
+  }
+
+  /// Buat polling baru ke Supabase
+  Future<bool> addPoll(
+    String boardId,
+    String question,
+    List<String> options, {
+    DateTime? dueDate,
+    bool showResultBeforeVote = true,
+    bool notifyOnEnd = false,
+  }) async {
+    final userId = currentUserProfile['id']?.toString() ?? '';
+    if (userId.isEmpty) return false;
+
+    final created = await PollService.createPoll(
+      boardId: boardId,
+      question: question,
+      options: options,
+      userId: userId,
+      dueDate: dueDate,
+      showResultBeforeVote: showResultBeforeVote,
+    );
+
+    if (created != null) {
       logActivity('Membuat polling baru: "$question"');
-      notifyListeners();
+      await loadPollsForBoard(boardId);
+      return true;
     }
+    return false;
   }
 
-  void votePoll(String boardId, String pollId, int optionIndex) {
+  /// Kirim suara pada opsi polling tertentu
+  Future<void> votePoll(String boardId, String pollId, String optionId) async {
+    final userId = currentUserProfile['id']?.toString() ?? '';
+    if (userId.isEmpty) return;
+
     final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
+      (b) => b['id'].toString() == boardId,
       orElse: () => <String, dynamic>{},
     );
-    if (board.isNotEmpty && (board as Map)['polls'] != null) {
-      final userName = currentUserProfile['name'] ?? 'Pengguna';
+
+    // Optimistic UI update agar responsif seketika
+    if (board.isNotEmpty && board['polls'] is List) {
       for (var poll in (board['polls'] as List)) {
-        final pollMap = poll as Map;
-        if (pollMap['id'] == pollId && pollMap['isClosed'] != true) {
-          final options = pollMap['options'] as List;
-          for (var opt in options) {
-            ((opt as Map)['votes'] as List).remove(userName);
-          }
-          if (optionIndex >= 0 && optionIndex < options.length) {
-            ((options[optionIndex] as Map)['votes'] as List).add(userName);
+        if (poll is Map && poll['id'].toString() == pollId) {
+          for (var opt in (poll['options'] as List)) {
+            final votes = (opt['votes'] as List);
+            votes.remove(userId);
+            if (opt['id'].toString() == optionId) {
+              votes.add(userId);
+            }
           }
           notifyListeners();
           break;
         }
       }
     }
+
+    await PollService.castVote(
+      pollId: pollId,
+      optionId: optionId,
+      userId: userId,
+    );
+    await loadPollsForBoard(boardId);
   }
 
-  void togglePollStatus(String boardId, String pollId) {
-    final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
-      orElse: () => <String, dynamic>{},
-    );
-    if (board.isNotEmpty && (board as Map)['polls'] != null) {
-      for (var poll in (board['polls'] as List)) {
-        final pollMap = poll as Map;
-        if (pollMap['id'] == pollId) {
-          pollMap['isClosed'] = !(pollMap['isClosed'] ?? false);
-          notifyListeners();
-          break;
-        }
+  /// Hapus polling dari Supabase
+  Future<void> deletePoll(String boardId, String pollId) async {
+    final success = await PollService.deletePoll(pollId);
+    if (success) {
+      final board = boards.firstWhere(
+        (b) => b['id'].toString() == boardId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (board.isNotEmpty && board['polls'] is List) {
+        (board['polls'] as List).removeWhere(
+          (p) => p['id'].toString() == pollId,
+        );
+        logActivity('Menghapus polling');
+        notifyListeners();
       }
-    }
-  }
-
-  void deletePoll(String boardId, String pollId) {
-    final board = boards.firstWhere(
-      (b) => (b as Map)['id'] == boardId,
-      orElse: () => <String, dynamic>{},
-    );
-    if (board.isNotEmpty && (board as Map)['polls'] != null) {
-      (board['polls'] as List).removeWhere((p) => (p as Map)['id'] == pollId);
-      notifyListeners();
     }
   }
 

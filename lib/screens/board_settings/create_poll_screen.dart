@@ -25,6 +25,8 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
     TextEditingController(),
     TextEditingController(),
   ];
+  DateTime? _pickedDateObj;
+  TimeOfDay? _pickedTimeObj;
 
   String? _selectedDate;
   String? _selectedTime;
@@ -64,7 +66,24 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
       lastDate: DateTime(2100),
     );
     if (date != null) {
-      setState(() => _selectedDate = "${date.day} Okt ${date.year}");
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'Mei',
+        'Jun',
+        'Jul',
+        'Agu',
+        'Sep',
+        'Okt',
+        'Nov',
+        'Des',
+      ];
+      setState(() {
+        _pickedDateObj = date;
+        _selectedDate = "${date.day} ${months[date.month - 1]} ${date.year}";
+      });
     }
   }
 
@@ -75,13 +94,13 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
     );
     if (time != null) {
       setState(() {
+        _pickedTimeObj = time;
         _selectedTime =
             "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
       });
     }
   }
 
-  // TAMBAHKAN async DI SINI
   void _handleCreatePoll() async {
     final question = _titleController.text.trim();
     final validOptions = _optionControllers
@@ -103,30 +122,51 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
       return;
     }
 
-    // 1. Tampilkan animasi loading
+    DateTime? finalDueDate;
+    if (_pickedDateObj != null) {
+      final hour = _pickedTimeObj?.hour ?? 23;
+      final minute = _pickedTimeObj?.minute ?? 59;
+      finalDueDate = DateTime(
+        _pickedDateObj!.year,
+        _pickedDateObj!.month,
+        _pickedDateObj!.day,
+        hour,
+        minute,
+      );
+    }
+
     setState(() => _isLoading = true);
 
-    // 2. Simpan data polling (proses ini sinkron)
-    AppDataController.instance.addPoll(widget.boardId, question, validOptions);
+    try {
+      await AppDataController.instance.addPoll(
+        widget.boardId,
+        question,
+        validOptions,
+        dueDate: finalDueDate,
+        showResultBeforeVote: _showResultsBeforeVote,
+        notifyOnEnd: _enableNotification,
+      );
 
-    // 3. Beri jeda visual 600ms MENGGUNAKAN AWAIT
-    await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Navigator.pop(context);
 
-    // 4. CEK MOUNTED DI SINI (Wajib untuk Dart Linter)
-    if (!mounted) return;
-
-    // 5. Matikan loading
-    setState(() => _isLoading = false);
-
-    // 6. Tutup layar dan tampilkan pesan sukses
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Polling berhasil dibuat!'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Polling berhasil dibuat!'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal membuat polling: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   @override

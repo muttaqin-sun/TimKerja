@@ -1,278 +1,102 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../data/app_data.dart';
+import '../../../../main.dart';
 import '../../../../theme/app_theme.dart';
 import '../create_poll_screen.dart';
 
-class PollingTab extends StatelessWidget {
+class PollingTab extends StatefulWidget {
   final String boardId;
   final bool isManager;
 
   const PollingTab({super.key, required this.boardId, required this.isManager});
 
-  // ===========================================================================
-  // MODAL 1: TAMPILAN CEPAT (Sesuai Gambar 2)
-  // ===========================================================================
-  void _showQuickPollModal(
-    BuildContext context,
-    Map<String, dynamic> rawPoll,
-    int totalVotes,
-    List normalizedOptions,
-  ) {
-    final String title = rawPoll['question']?.toString() ?? 'Tanpa Judul';
-    final String creator = rawPoll['creator']?.toString() ?? 'Anggota';
-    final String date = rawPoll['date']?.toString() ?? 'Hari ini';
-    final bool isActive = rawPoll['isClosed'] != true;
+  @override
+  State<PollingTab> createState() => _PollingTabState();
+}
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Handle Bar atas
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    margin: const EdgeInsets.only(bottom: 24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
+class _PollingTabState extends State<PollingTab> {
+  RealtimeChannel? _pollChannel;
+  bool _isLoading = true;
 
-                // Header (Ikon, Judul, Close Button)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE6F7F5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.bar_chart_rounded,
-                        color: AppColors.primary,
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: AppTextStyles.screenTitle.copyWith(
-                              fontSize: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Dibuat oleh $creator • $date, 14.30',
-                            style: AppTextStyles.cardSubtitle.copyWith(
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.black54),
-                      onPressed: () => Navigator.pop(ctx),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Baris Status Aktif & Total Suara
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isActive
-                            ? const Color(0xFFE6F7F5)
-                            : AppColors.surfaceMuted,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? AppColors.primary
-                                  : AppColors.textMuted,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            isActive ? 'Aktif' : 'Selesai',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isActive
-                                  ? AppColors.primary
-                                  : AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.people_alt_outlined,
-                            size: 14,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$totalVotes suara',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Pertanyaan Box
-                Text(
-                  'Pertanyaan',
-                  style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'Kapan waktu yang paling cocok untuk acara Makrab HIMSI tahun ini?', // Fallback/Dummy teks sesuai gambar
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF1E293B),
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Pilihan Opsi
-                Text(
-                  'Pilihan Opsi',
-                  style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                ),
-                const SizedBox(height: 12),
-
-                ...normalizedOptions.map((opt) {
-                  final String optTitle = opt['title'];
-                  final int voteCount = (opt['votes'] as List).length;
-                  final double percent = totalVotes == 0
-                      ? 0.0
-                      : (voteCount / totalVotes);
-                  return _buildOptionRow(
-                    optTitle,
-                    voteCount,
-                    percent,
-                    withNumber: false,
-                  );
-                }),
-
-                const SizedBox(height: 24),
-
-                // Tombol Lihat Detail
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx); // Tutup modal 1
-                      _showDetailPollModal(
-                        context,
-                        rawPoll,
-                        totalVotes,
-                        normalizedOptions,
-                      ); // Buka modal 2
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE6F7F5),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text(
-                      'Lihat Detail >',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  @override
+  void initState() {
+    super.initState();
+    _initPolls();
   }
 
-  // ===========================================================================
-  // MODAL 2: TAMPILAN DETAIL (Sesuai Gambar 1)
-  // ===========================================================================
-  void _showDetailPollModal(
-    BuildContext context,
-    Map<String, dynamic> rawPoll,
-    int totalVotes,
-    List normalizedOptions,
-  ) {
-    final String title = rawPoll['question']?.toString() ?? 'Tanpa Judul';
-    final String creator = rawPoll['creator']?.toString() ?? 'Anggota';
-    final String date = rawPoll['date']?.toString() ?? 'Hari ini';
-    final bool isActive = rawPoll['isClosed'] != true;
+  Future<void> _initPolls() async {
+    await AppDataController.instance.loadPollsForBoard(widget.boardId);
+    if (mounted) setState(() => _isLoading = false);
+
+    _pollChannel = supabase
+        .channel('public:polls_${widget.boardId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'polls',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'board_id',
+            value: widget.boardId,
+          ),
+          callback: (_) =>
+              AppDataController.instance.loadPollsForBoard(widget.boardId),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'poll_options',
+          callback: (_) =>
+              AppDataController.instance.loadPollsForBoard(widget.boardId),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'poll_votes',
+          callback: (_) =>
+              AppDataController.instance.loadPollsForBoard(widget.boardId),
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    if (_pollChannel != null) {
+      supabase.removeChannel(_pollChannel!);
+    }
+    super.dispose();
+  }
+
+  String _formatDateTime(
+    DateTime? dt, {
+    String fallback = 'Tanpa batas waktu',
+  }) {
+    if (dt == null) return fallback;
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'Mei',
+      'Jun',
+      'Jul',
+      'Agu',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Des',
+    ];
+    final local = dt.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '${local.day} ${months[local.month - 1]} ${local.year}, $hh:$mm';
+  }
+
+  void _showQuickPollModal(BuildContext context, String pollId) {
+    final currentUserId =
+        AppDataController.instance.currentUserProfile['id']?.toString() ?? '';
 
     showModalBottomSheet(
       context: context,
@@ -282,535 +106,551 @@ class PollingTab extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Handle Bar atas
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 5,
-                    margin: const EdgeInsets.only(bottom: 24),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
+        return ListenableBuilder(
+          listenable: AppDataController.instance,
+          builder: (context, _) {
+            final board = AppDataController.instance.boards.firstWhere(
+              (b) => b['id'].toString() == widget.boardId,
+              orElse: () => <String, dynamic>{},
+            );
+            final List polls = (board['polls'] as List?) ?? [];
+            final poll = polls.firstWhere(
+              (p) => p['id'].toString() == pollId,
+              orElse: () => <String, dynamic>{},
+            );
 
-                // Header Sama dengan modal 1
-                Row(
+            if (poll.isEmpty) return const SizedBox.shrink();
+
+            final String question = poll['question']?.toString() ?? 'Polling';
+            final String creator = poll['creator']?.toString() ?? 'Anggota';
+            final DateTime? createdAt = poll['createdAt'] != null
+                ? DateTime.tryParse(poll['createdAt'].toString())
+                : null;
+            final DateTime? dueDate = poll['dueDate'] as DateTime?;
+            final bool isExpired =
+                dueDate != null && DateTime.now().isAfter(dueDate);
+            final bool isActive = poll['isClosed'] != true;
+            final bool showBeforeVote = poll['showResultBeforeVote'] ?? true;
+            final List options = (poll['options'] as List?) ?? [];
+
+            int totalVotes = 0;
+            bool hasUserVoted = false;
+            for (var opt in options) {
+              final votes = (opt['votes'] as List?) ?? [];
+              totalVotes += votes.length;
+              if (votes.contains(currentUserId)) {
+                hasUserVoted = true;
+              }
+            }
+
+            final bool canSeeResults =
+                showBeforeVote || hasUserVoted || !isActive;
+
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE6F7F5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.bar_chart_rounded,
-                        color: AppColors.primary,
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: AppTextStyles.screenTitle.copyWith(
-                              fontSize: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Dibuat oleh $creator • $date, 14.30',
-                            style: AppTextStyles.cardSubtitle.copyWith(
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.black54),
-                      onPressed: () => Navigator.pop(ctx),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Card Info Detail (Durasi & Total Peserta)
-                Row(
-                  children: [
-                    Expanded(
+                    Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 16,
-                        ),
+                        width: 40,
+                        height: 5,
+                        margin: const EdgeInsets.only(bottom: 24),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.access_time,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Durasi Polling',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                const Text(
-                                  '24 jam',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E293B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(10),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE6F7F5),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.people_alt,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Total Peserta',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                Text(
-                                  '$totalVotes orang',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E293B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Pertanyaan Box
-                Text(
-                  'Pertanyaan',
-                  style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'Kapan waktu yang paling cocok untuk acara Makrab HIMSI tahun ini?',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF1E293B),
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Pilihan Opsi Dengan Angka
-                Text(
-                  'Pilihan Opsi',
-                  style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                ),
-                const SizedBox(height: 12),
-
-                ...normalizedOptions.asMap().entries.map((entry) {
-                  final int index = entry.key;
-                  final opt = entry.value;
-                  final String optTitle = opt['title'];
-                  final int voteCount = (opt['votes'] as List).length;
-                  final double percent = totalVotes == 0
-                      ? 0.0
-                      : (voteCount / totalVotes);
-
-                  return _buildOptionRow(
-                    optTitle,
-                    voteCount,
-                    percent,
-                    withNumber: true,
-                    index: index + 1,
-                  );
-                }),
-
-                const SizedBox(height: 24),
-
-                // Banner Selesai (Hanya contoh fallback/dummy visual)
-                if (!isActive || true) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE6F7F5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.check_circle,
-                          color: AppColors.primary,
-                          size: 28,
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE6F7F5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.bar_chart_rounded,
+                            color: AppColors.primary,
+                            size: 26,
+                          ),
                         ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Polling telah berakhir',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                question,
+                                style: AppTextStyles.screenTitle.copyWith(
+                                  fontSize: 18,
+                                ),
                               ),
-                            ),
-                            Text(
-                              'Berakhir pada 13 Okt 2025, 14.30',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
+                              const SizedBox(height: 4),
+                              Text(
+                                'Dibuat oleh $creator • ${_formatDateTime(createdAt, fallback: 'Baru saja')}',
+                                style: AppTextStyles.cardSubtitle.copyWith(
+                                  fontSize: 12,
+                                ),
                               ),
+                            ],
+                          ),
+                        ),
+                        if (poll['createdBy'] == currentUserId ||
+                            widget.isManager)
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.error,
+                              size: 22,
                             ),
-                          ],
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              await AppDataController.instance.deletePoll(
+                                widget.boardId,
+                                pollId,
+                              );
+                            },
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.black54),
+                          onPressed: () => Navigator.pop(ctx),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? const Color(0xFFE6F7F5)
+                                : AppColors.surfaceMuted,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                isActive ? 'Aktif' : 'Selesai',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isActive
+                                      ? AppColors.primary
+                                      : AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.people_alt_outlined,
+                                size: 14,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$totalVotes suara',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      isActive
+                          ? 'Ketuk opsi untuk memilih suara'
+                          : 'Hasil Akhir Polling',
+                      style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
+                    ),
+                    if (dueDate != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? const Color(0xFFFFF7ED)
+                              : const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isActive
+                                ? const Color(0xFFFDBA74)
+                                : const Color(0xFFFECACA),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isActive
+                                  ? Icons.schedule_rounded
+                                  : Icons.lock_clock_rounded,
+                              size: 16,
+                              color: isActive
+                                  ? const Color(0xFFEA580C)
+                                  : const Color(0xFFDC2626),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isActive
+                                    ? 'Batas waktu: ${_formatDateTime(dueDate)}'
+                                    : 'Polling ditutup pada ${_formatDateTime(dueDate)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isActive
+                                      ? const Color(0xFFC2410C)
+                                      : const Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    ...options.map((opt) {
+                      final String optId = opt['id'].toString();
+                      final String optTitle = opt['title']?.toString() ?? '';
+                      final List votes = (opt['votes'] as List?) ?? [];
+                      final bool isSelected = votes.contains(currentUserId);
+                      final double percent = totalVotes == 0
+                          ? 0.0
+                          : (votes.length / totalVotes);
 
-                // Tombol Tutup
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE6F7F5),
-                      side: const BorderSide(
-                        color: AppColors.primary,
-                        width: 1.5,
+                      return _buildInteractiveOptionTile(
+                        title: optTitle,
+                        votes: votes.length,
+                        percent: percent,
+                        isSelected: isSelected,
+                        showResult: canSeeResults,
+                        enabled: isActive,
+                        onTap: () => AppDataController.instance.votePoll(
+                          widget.boardId,
+                          pollId,
+                          optId,
+                        ),
+                      );
+                    }),
+                    if (!canSeeResults)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Hasil suara disembunyikan hingga Anda memberikan suara.',
+                          style: AppTextStyles.cardSubtitle.copyWith(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE6F7F5),
+                          side: const BorderSide(
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          'Tutup',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: const Text(
-                      'Tutup',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  // WIDGET BANTUAN: Baris Opsi Polling Responsif
-  Widget _buildOptionRow(
-    String title,
-    int votes,
-    double percent, {
-    required bool withNumber,
-    int? index,
+  Widget _buildInteractiveOptionTile({
+    required String title,
+    required int votes,
+    required double percent,
+    required bool isSelected,
+    required bool showResult,
+    required bool enabled,
+    required VoidCallback onTap,
   }) {
     final String percentStr = (percent * 100)
         .toStringAsFixed(1)
         .replaceAll('.0', '');
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
-      child: Row(
-        children: [
-          if (withNumber && index != null) ...[
-            Container(
-              width: 26,
-              height: 26,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE6F7F5),
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                '$index',
-                style: const TextStyle(
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE6F7F5) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.borderLight,
+            width: isSelected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isSelected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 20,
+                  color: isSelected ? AppColors.primary : AppColors.textMuted,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+                if (showResult)
+                  Text(
+                    '$percentStr% ($votes)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? AppColors.primary
+                          : Colors.grey.shade600,
+                    ),
+                  ),
+              ],
+            ),
+            if (showResult) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: percent,
+                  minHeight: 7,
+                  backgroundColor: Colors.white,
                   color: AppColors.primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
+            ],
           ],
-          Expanded(
-            flex: 4,
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 3,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: LinearProgressIndicator(
-                value: percent,
-                minHeight: 8,
-                backgroundColor: const Color(0xFFF1F5F9),
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 4,
-            child: Text(
-              '$percentStr% ($votes suara)',
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  // ===========================================================================
-  // FUNGSI NORMALISASI DATA & ENTRY POINT
-  // ===========================================================================
-  void _processAndShowPoll(BuildContext context, Map<String, dynamic> rawPoll) {
-    final List normalizedOptions = [];
-    final rawOptions = rawPoll['options'];
-
-    if (rawOptions is List && rawOptions.isNotEmpty) {
-      for (var item in rawOptions) {
-        if (item is Map) {
-          normalizedOptions.add({
-            'title': (item['title'] ?? item['text'] ?? 'Opsi').toString(),
-            'votes': (item['votes'] is List) ? List.from(item['votes']) : [],
-          });
-        } else if (item != null) {
-          normalizedOptions.add({'title': item.toString(), 'votes': []});
-        }
-      }
-    } else {
-      // Fallback Dummy Data
-      normalizedOptions.addAll([
-        {
-          'title': '10–11 Januari 2026',
-          'votes': ['1', '2'],
-        },
-        {
-          'title': '17–18 Januari 2026',
-          'votes': ['1', '2', '3'],
-        },
-        {
-          'title': '24–25 Januari 2026',
-          'votes': ['1'],
-        },
-      ]);
-    }
-
-    int totalVotes = 0;
-    for (var opt in normalizedOptions) {
-      totalVotes += (opt['votes'] as List).length;
-    }
-
-    // Panggil modal 1 (Quick view) sebagai awal mula klik board
-    _showQuickPollModal(context, rawPoll, totalVotes, normalizedOptions);
-  }
-
-  // ===========================================================================
-  // MAIN BUILD METHOD (Tampilan Tab Utama tetap dipertahankan)
-  // ===========================================================================
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: AppDataController.instance,
       builder: (context, _) {
-        Map<String, dynamic> board = {};
-        try {
-          final found = AppDataController.instance.boards.firstWhere(
-            (b) => b['id'] == boardId,
-            orElse: () => <String, dynamic>{'title': 'Board'},
-          );
-          if (found is Map) {
-            board = Map<String, dynamic>.from(found);
-          }
-        } catch (_) {}
+        final board = AppDataController.instance.boards.firstWhere(
+          (b) => b['id'].toString() == widget.boardId,
+          orElse: () => <String, dynamic>{'title': 'Board'},
+        );
 
         final String boardTitle = board['title']?.toString() ?? 'Board';
         final List dynamicPolls = (board['polls'] is List)
             ? board['polls']
             : [];
 
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          physics: const BouncingScrollPhysics(),
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Daftar Polling',
-                  style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CreatePollScreen(
-                          boardId: boardId,
-                          boardTitle: boardTitle,
+        return RefreshIndicator(
+          color: AppColors.primary,
+          onRefresh: () =>
+              AppDataController.instance.loadPollsForBoard(widget.boardId),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Daftar Polling',
+                    style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CreatePollScreen(
+                            boardId: widget.boardId,
+                            boardTitle: boardTitle,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text(
+                      'Buat Polling',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(
+                        color: AppColors.primary,
+                        width: 1.2,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                )
+              else if (dynamicPolls.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.borderLight),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.poll_outlined,
+                        size: 44,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Belum ada polling di board ini',
+                        style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tekan tombol "Buat Polling" untuk memulai voting tim.',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.cardSubtitle.copyWith(
+                          fontSize: 12,
                         ),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text(
-                    'Buat Polling',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ],
                   ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(
-                      color: AppColors.primary,
-                      width: 1.2,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    minimumSize: Size.zero,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                )
+              else
+                ...dynamicPolls.map((poll) {
+                  if (poll is! Map) return const SizedBox.shrink();
+                  final pollMap = Map<String, dynamic>.from(poll);
 
-            // 1. POLLING DINAMIS
-            ...dynamicPolls.map((poll) {
-              if (poll is! Map) return const SizedBox.shrink();
-              final pollMap = Map<String, dynamic>.from(poll);
-
-              int totalRespondents = 0;
-              if (pollMap['options'] is List) {
-                for (var opt in (pollMap['options'] as List)) {
-                  if (opt is Map && opt['votes'] is List) {
-                    totalRespondents += (opt['votes'] as List).length;
+                  int totalRespondents = 0;
+                  if (pollMap['options'] is List) {
+                    for (var opt in (pollMap['options'] as List)) {
+                      if (opt is Map && opt['votes'] is List) {
+                        totalRespondents += (opt['votes'] as List).length;
+                      }
+                    }
                   }
-                }
-              }
 
-              return _buildPollCard(
-                title: pollMap['question']?.toString() ?? 'Tanpa Judul',
-                creator: pollMap['creator']?.toString() ?? 'Anggota',
-                date: pollMap['date']?.toString() ?? 'Hari ini',
-                respondents: totalRespondents,
-                isActive: pollMap['isClosed'] != true,
-                onTap: () => _processAndShowPoll(context, pollMap),
-              );
-            }),
+                  final DateTime? dueDate = pollMap['dueDate'] as DateTime?;
+                  final bool isExpired =
+                      dueDate != null && DateTime.now().isAfter(dueDate);
+                  final bool isCardActive =
+                      (pollMap['isClosed'] != true) && !isExpired;
+                  final String dateLabel = dueDate != null
+                      ? 'Batas: ${_formatDateTime(dueDate)}'
+                      : 'Aktif terus';
 
-            // 2. DUMMY POLLING (Fallback Statis)
-            _buildPollCard(
-              title: 'Jadwal Makrab',
-              creator: 'Ilham Muttaqin',
-              date: '12 Okt 2025',
-              respondents: 6,
-              isActive: true,
-              onTap: () => _processAndShowPoll(context, {
-                'question': 'Jadwal Makrab',
-                'creator': 'Ilham Muttaqin',
-                'date': '12 Okt 2025',
-                'options': [
-                  {
-                    'title': '10–11 Januari 2026',
-                    'votes': ['1', '2'],
-                  },
-                  {
-                    'title': '17–18 Januari 2026',
-                    'votes': ['1', '2', '3'],
-                  },
-                  {
-                    'title': '24–25 Januari 2026',
-                    'votes': ['1'],
-                  },
-                ],
-              }),
-            ),
-          ],
+                  return _buildPollCard(
+                    title: pollMap['question']?.toString() ?? 'Tanpa Judul',
+                    creator: pollMap['creator']?.toString() ?? 'Anggota',
+                    date: dateLabel,
+                    respondents: totalRespondents,
+                    isActive: isCardActive,
+                    onTap: () =>
+                        _showQuickPollModal(context, pollMap['id'].toString()),
+                  );
+                }),
+            ],
+          ),
         );
       },
     );
@@ -878,10 +718,14 @@ class PollingTab extends StatelessWidget {
                               color: AppColors.textMuted,
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              date,
-                              style: AppTextStyles.cardSubtitle.copyWith(
-                                fontSize: 12,
+                            Expanded(
+                              child: Text(
+                                date,
+                                style: AppTextStyles.cardSubtitle.copyWith(
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
