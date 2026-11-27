@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../data/app_data.dart';
 import '../theme/app_theme.dart';
+import 'board_chat_screen.dart';
+import 'board_screen.dart';
+import 'task_detail_screen.dart';
 
 class NotificationsTab extends StatefulWidget {
   const NotificationsTab({super.key});
@@ -11,24 +14,65 @@ class NotificationsTab extends StatefulWidget {
 }
 
 class _NotificationsTabState extends State<NotificationsTab> {
-  String _selectedTopFilter = 'All';
+  static const List<String> _categories = [
+    'All',
+    'Mentions',
+    'Assignments',
+    'Due Dates',
+    'Polls',
+  ];
+
+  int _selectedTabIndex = 0;
+  late final PageController _pageController;
+  final ScrollController _chipScrollController = ScrollController();
 
   // State untuk Bottom Sheet Filter
-  List<String> _selectedPriorities = []; // Kosong = semua prioritas
+  List<String> _selectedPriorities = [];
   String _selectedSort = 'Terbaru';
 
-  // GETTER LOGIKA FILTER & SORTING (MEMBACA APPDATACONTROLLER)
-  List<Map<String, dynamic>> _getFilteredNotifications() {
-    List<Map<String, dynamic>> list = List.from(
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+    // Pastikan listener realtime & data terbaru dimuat saat tab dibuka
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppDataController.instance.initNotificationsRealtime();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _chipScrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSelectCategory(int index) {
+    setState(() => _selectedTabIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  List<Map<String, dynamic>> _getFilteredNotifications(String category) {
+    List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
       AppDataController.instance.notifications,
     );
 
-    // 1. Filter Kategori Atas (All, Mentions, Assignments, Due Dates)
-    if (_selectedTopFilter != 'All') {
-      list = list.where((item) => item['type'] == _selectedTopFilter).toList();
+    // 1. Filter Kategori Atas (case-insensitive)
+    if (category != 'All') {
+      list = list
+          .where(
+            (item) =>
+                (item['type']?.toString().toLowerCase() ?? '') ==
+                category.toLowerCase(),
+          )
+          .toList();
     }
 
-    // 2. Filter Bottom Sheet (Prioritas: High, Medium, Low)
+    // 2. Filter Prioritas (High, Medium, Low)
     if (_selectedPriorities.isNotEmpty) {
       list = list
           .where((item) => _selectedPriorities.contains(item['priority']))
@@ -41,17 +85,85 @@ class _NotificationsTabState extends State<NotificationsTab> {
       list.sort((a, b) {
         int pA = priorityMap[a['priority']] ?? 0;
         int pB = priorityMap[b['priority']] ?? 0;
-        return pB.compareTo(pA); // High ke Low
+        return pB.compareTo(pA);
       });
     } else if (_selectedSort == 'Terbaru') {
       list.sort((a, b) {
-        DateTime tA = a['timestamp'] as DateTime;
-        DateTime tB = b['timestamp'] as DateTime;
-        return tB.compareTo(tA); // Terbaru ke Lama
+        DateTime tA = (a['timestamp'] as DateTime?) ?? DateTime(2000);
+        DateTime tB = (b['timestamp'] as DateTime?) ?? DateTime(2000);
+        return tB.compareTo(tA);
       });
     }
 
     return list;
+  }
+
+  void _handleNotificationTap(Map<String, dynamic> item) {
+    final String id = item['id']?.toString() ?? '';
+    final String type = item['type']?.toString() ?? 'All';
+    final String? boardId = item['boardId']?.toString();
+    final String? referenceId = item['referenceId']?.toString();
+    final String subtitle = item['subtitle']?.toString() ?? '';
+
+    if (id.isNotEmpty && item['isRead'] != true) {
+      AppDataController.instance.markNotificationAsRead(id);
+    }
+
+    // 1. Navigasi ke Detail Task jika referenceId adalah ID task yang tersedia
+    if (referenceId != null && referenceId.isNotEmpty) {
+      final taskExists = AppDataController.instance.tasks.any(
+        (t) => t['id']?.toString() == referenceId,
+      );
+      if (taskExists) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskDetailScreen(taskId: referenceId),
+          ),
+        );
+        return;
+      }
+    }
+
+    // 2. Navigasi berbasis Board (Chat Board atau Board Screen)
+    if (boardId != null && boardId.isNotEmpty) {
+      final board = AppDataController.instance.boards.firstWhere(
+        (b) => b['id']?.toString() == boardId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (board.isNotEmpty) {
+        final String boardTitle = board['title']?.toString() ?? 'Board';
+
+        if (type == 'Mentions' &&
+            subtitle.toLowerCase().contains('ruang diskusi')) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  BoardChatScreen(boardId: boardId, boardTitle: boardTitle),
+            ),
+          );
+          return;
+        }
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                BoardScreen(boardId: boardId, boardTitle: boardTitle),
+          ),
+        );
+        return;
+      }
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Notifikasi ditandai sebagai dibaca'),
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   void _showFilterBottomSheet() {
@@ -97,7 +209,6 @@ class _NotificationsTabState extends State<NotificationsTab> {
                         style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
                       ),
                       const SizedBox(height: 16),
-
                       Text('Prioritas', style: AppTextStyles.sectionTitle),
                       const SizedBox(height: 8),
                       Row(
@@ -149,7 +260,6 @@ class _NotificationsTabState extends State<NotificationsTab> {
                         ],
                       ),
                       const SizedBox(height: 16),
-
                       Text(
                         'Urutkan berdasarkan',
                         style: AppTextStyles.sectionTitle,
@@ -190,7 +300,6 @@ class _NotificationsTabState extends State<NotificationsTab> {
                             setModalState(() => tempSort = value!),
                       ),
                       const SizedBox(height: 20),
-
                       Row(
                         children: [
                           Expanded(
@@ -269,12 +378,13 @@ class _NotificationsTabState extends State<NotificationsTab> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
@@ -331,121 +441,151 @@ class _NotificationsTabState extends State<NotificationsTab> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+            ),
 
-              // Top Filter Chips (All, Mentions, Assignments, Due Dates)
-              SingleChildScrollView(
+            // Top Filter Chips dengan Horizontal Scroll
+            SizedBox(
+              height: 40,
+              child: ListView.builder(
+                controller: _chipScrollController,
                 scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Row(
-                  children: ['All', 'Mentions', 'Assignments', 'Due Dates'].map(
-                    (filter) {
-                      final isSelected = _selectedTopFilter == filter;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(filter),
-                          selected: isSelected,
-                          selectedColor: AppColors.primary,
-                          backgroundColor: AppColors.surfaceMuted,
-                          showCheckmark: false,
-                          side: BorderSide.none,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          labelStyle: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : AppColors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedTopFilter = filter;
-                            });
-                          },
-                        ),
-                      );
-                    },
-                  ).toList(),
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _categories.length,
+                itemBuilder: (context, index) {
+                  final filter = _categories[index];
+                  final isSelected = _selectedTabIndex == index;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: isSelected,
+                      selectedColor: AppColors.primary,
+                      backgroundColor: AppColors.surfaceMuted,
+                      showCheckmark: false,
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      labelStyle: TextStyle(
+                        color: isSelected
+                            ? Colors.white
+                            : AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      onSelected: (_) => _onSelectCategory(index),
+                    ),
+                  );
+                },
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 12),
 
-              // Indikator Filter Aktif
-              if (_selectedPriorities.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Text('Filtered by: ', style: AppTextStyles.cardSubtitle),
-                      ..._selectedPriorities.map(
-                        (p) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Text(
-                            p,
-                            style: AppTextStyles.cardTitle.copyWith(
-                              fontSize: 12,
-                              color: AppColors.primary,
-                            ),
+            // Indikator Filter Aktif
+            if (_selectedPriorities.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Row(
+                  children: [
+                    Text('Filtered by: ', style: AppTextStyles.cardSubtitle),
+                    ..._selectedPriorities.map(
+                      (p) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Text(
+                          p,
+                          style: AppTextStyles.cardTitle.copyWith(
+                            fontSize: 12,
+                            color: AppColors.primary,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-
-              // Notifications List (Reaktif Membaca Data Controller & Filter)
-              Expanded(
-                child: ListenableBuilder(
-                  listenable: AppDataController.instance,
-                  builder: (context, _) {
-                    final displayList = _getFilteredNotifications();
-
-                    if (displayList.isEmpty) {
-                      return Center(
-                        child: Text(
-                          'There are no notifications according to the filter',
-                          style: AppTextStyles.cardSubtitle,
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: displayList.length,
-                      itemBuilder: (context, index) {
-                        final item = displayList[index];
-                        return _buildNotificationItem(
-                          id: item['id'],
-                          icon: item['icon'],
-                          title: item['title'],
-                          subtitle: item['subtitle'],
-                          time: item['time'],
-                          priority: item['priority'],
-                          isRead: item['isRead'] ?? false,
-                        );
-                      },
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+
+            // PageView untuk Swipe Horizontal antar Kategori + Pull-to-Refresh
+            Expanded(
+              child: ListenableBuilder(
+                listenable: AppDataController.instance,
+                builder: (context, _) {
+                  return PageView.builder(
+                    controller: _pageController,
+                    itemCount: _categories.length,
+                    onPageChanged: (index) {
+                      setState(() => _selectedTabIndex = index);
+                    },
+                    itemBuilder: (context, pageIndex) {
+                      final category = _categories[pageIndex];
+                      final displayList = _getFilteredNotifications(category);
+
+                      return RefreshIndicator(
+                        color: AppColors.primary,
+                        onRefresh: () =>
+                            AppDataController.instance.refreshNotifications(),
+                        child: displayList.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(
+                                  parent: BouncingScrollPhysics(),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                children: [
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height *
+                                        0.28,
+                                  ),
+                                  Center(
+                                    child: Text(
+                                      'There are no notifications according to the filter',
+                                      textAlign: TextAlign.center,
+                                      style: AppTextStyles.cardSubtitle,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(
+                                  parent: BouncingScrollPhysics(),
+                                ),
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  4,
+                                  20,
+                                  24,
+                                ),
+                                itemCount: displayList.length,
+                                itemBuilder: (context, index) {
+                                  final item = displayList[index];
+                                  return _buildNotificationItem(item);
+                                },
+                              ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildNotificationItem({
-    required String id,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String time,
-    required String priority,
-    required bool isRead,
-  }) {
+  Widget _buildNotificationItem(Map<String, dynamic> item) {
+    final String id = item['id']?.toString() ?? '';
+    final IconData icon =
+        (item['icon'] as IconData?) ?? Icons.notifications_outlined;
+    final String title = item['title']?.toString() ?? '';
+    final String subtitle = item['subtitle']?.toString() ?? '';
+    final String time = item['time']?.toString() ?? '';
+    final String priority = item['priority']?.toString() ?? 'Medium';
+    final bool isRead = item['isRead'] == true;
+
     Color badgeBgColor;
     Color badgeTextColor;
     Color dynamicIconColor;
@@ -549,159 +689,165 @@ class _NotificationsTabState extends State<NotificationsTab> {
           ],
         ),
       ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isRead ? AppColors.surface : AppColors.surface.withAlpha(245),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
+      child: GestureDetector(
+        onTap: () => _handleNotificationTap(item),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
             color: isRead
-                ? AppColors.borderLight
-                : AppColors.primary.withOpacity(0.35),
-            width: isRead ? 1.0 : 1.4,
-          ),
-          boxShadow: const [AppShadows.subtleBorder],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: dynamicIconColor.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, size: 20, color: dynamicIconColor),
-                ),
-                if (!isRead)
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
+                ? AppColors.surface
+                : AppColors.surface.withAlpha(245),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isRead
+                  ? AppColors.borderLight
+                  : AppColors.primary.withOpacity(0.35),
+              width: isRead ? 1.0 : 1.4,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            boxShadow: const [AppShadows.subtleBorder],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: AppTextStyles.cardTitle.copyWith(
-                            fontSize: 14,
-                            fontWeight: isRead
-                                ? FontWeight.w600
-                                : FontWeight.bold,
-                          ),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: dynamicIconColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 20, color: dynamicIconColor),
+                  ),
+                  if (!isRead)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: badgeBgColor,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              priority,
-                              style: AppTextStyles.badgeText.copyWith(
-                                color: badgeTextColor,
-                                fontSize: 10,
-                              ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: AppTextStyles.cardTitle.copyWith(
+                              fontSize: 14,
+                              fontWeight: isRead
+                                  ? FontWeight.w600
+                                  : FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          // Mark as read action di bawah level prioritas High-Low
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (!isRead) {
-                                AppDataController.instance
-                                    .markNotificationAsRead(id);
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    isRead
-                                        ? Icons.done_all_rounded
-                                        : Icons.check_circle_outline_rounded,
-                                    size: 13,
-                                    color: isRead
-                                        ? AppColors.textMuted
-                                        : AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    isRead ? 'Dibaca' : 'Tandai dibaca',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: isRead
-                                          ? FontWeight.normal
-                                          : FontWeight.w600,
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: badgeBgColor,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                priority,
+                                style: AppTextStyles.badgeText.copyWith(
+                                  color: badgeTextColor,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                if (!isRead) {
+                                  AppDataController.instance
+                                      .markNotificationAsRead(id);
+                                }
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isRead
+                                          ? Icons.done_all_rounded
+                                          : Icons.check_circle_outline_rounded,
+                                      size: 13,
                                       color: isRead
                                           ? AppColors.textMuted
                                           : AppColors.primary,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      isRead ? 'Dibaca' : 'Tandai dibaca',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: isRead
+                                            ? FontWeight.normal
+                                            : FontWeight.w600,
+                                        color: isRead
+                                            ? AppColors.textMuted
+                                            : AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 16,
-                        color: AppColors.textMuted,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: AppTextStyles.cardSubtitle.copyWith(height: 1.4),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    time,
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                          ],
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: AppTextStyles.cardSubtitle.copyWith(height: 1.4),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      time,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

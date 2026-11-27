@@ -21,6 +21,28 @@ class TaskService {
     }
   }
 
+  /// Mengambil seluruh tasks untuk banyak board sekaligus dalam 1 query
+  static Future<List<Map<String, dynamic>>> fetchTasksForBoards(
+    List<String> boardIds,
+  ) async {
+    if (boardIds.isEmpty) return [];
+    try {
+      final res = await supabase
+          .from('tasks')
+          .select(
+            '*, subtasks(*), task_comments(*, profiles(name, avatar_color)), task_attachments(*), task_members(*, profiles(id, name, avatar_color))',
+          )
+          .inFilter('board_id', boardIds)
+          .order('position', ascending: true)
+          .order('created_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      print('ERROR fetchTasksForBoards: $e');
+      return [];
+    }
+  }
+
   /// Membuat kolom list baru di board
   static Future<Map<String, dynamic>?> createBoardList({
     required String boardId,
@@ -320,6 +342,31 @@ class TaskService {
     }
   }
 
+  /// Perbarui status tugas beserta hasil validasi / catatan revisi Manager
+  static Future<bool> updateTaskReview({
+    required String taskId,
+    required String status,
+    required bool isDone,
+    required String reviewStatus,
+    String? reviewNote,
+  }) async {
+    try {
+      await supabase
+          .from('tasks')
+          .update({
+            'status': status,
+            'is_done': isDone,
+            'review_status': reviewStatus,
+            'review_note': reviewNote,
+          })
+          .eq('id', taskId);
+      return true;
+    } catch (e) {
+      print('ERROR updateTaskReview [$taskId]: $e');
+      return false;
+    }
+  }
+
   /// Menambah komentar pada task
   static Future<Map<String, dynamic>?> addComment({
     required String taskId,
@@ -394,5 +441,27 @@ class TaskService {
   /// Hapus lampiran dari database
   static Future<void> deleteTaskAttachment(String attachmentId) async {
     await supabase.from('task_attachments').delete().eq('id', attachmentId);
+  }
+
+  /// Sinkronkan daftar anggota yang ditugaskan pada task ke tabel task_members
+  static Future<bool> syncTaskMembers({
+    required String taskId,
+    required List<String> userIds,
+  }) async {
+    try {
+      await supabase.from('task_members').delete().eq('task_id', taskId);
+
+      if (userIds.isNotEmpty) {
+        final payloads = userIds
+            .toSet()
+            .map((uid) => {'task_id': taskId, 'user_id': uid})
+            .toList();
+        await supabase.from('task_members').insert(payloads);
+      }
+      return true;
+    } catch (e) {
+      print('ERROR syncTaskMembers [$taskId]: $e');
+      return false;
+    }
   }
 }
