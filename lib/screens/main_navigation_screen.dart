@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/app_data.dart';
 import '../theme/app_theme.dart';
 import 'home_tab.dart';
 import 'tasks_tab.dart';
@@ -16,7 +17,31 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
-  // Variabel _tabs di luar method build SUDAH DIHAPUS
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = AppDataController.instance.currentNavIndex.value;
+    AppDataController.instance.currentNavIndex.addListener(
+      _onExternalTabChange,
+    );
+  }
+
+  void _onExternalTabChange() {
+    final targetIndex = AppDataController.instance.currentNavIndex.value;
+    if (mounted && _currentIndex != targetIndex) {
+      setState(() {
+        _currentIndex = targetIndex;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    AppDataController.instance.currentNavIndex.removeListener(
+      _onExternalTabChange,
+    );
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +74,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 setState(() {
                   _currentIndex = index;
                 });
+                AppDataController.instance.currentNavIndex.value = index;
               },
               type: BottomNavigationBarType.fixed,
               backgroundColor: AppColors.surface,

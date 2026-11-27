@@ -9,15 +9,24 @@ Dokumen ini mencatat tahapan pengembangan proyek **TimKerja** dari awal inisiasi
 | **Fase 1** | `feature/auth`<br>`feature/profile` | **Fondasi, Autentikasi & Profil:** Inisialisasi proyek Flutter & Supabase, alur *Splash Screen*, registrasi & login email, manajemen sesi pengguna, serta pengelolaan profil dan inisial avatar otomatis. | Selesai |
 | **Fase 2** | `feature/board` | **Manajemen Board & Keanggotaan:** Pembuatan *board* dengan warna tema & privasi, pembangkitan kode undangan unik, fitur bergabung via kode (*Join Board*), serta pengaturan umum dan daftar anggota *board*. | Selesai |
 | **Fase 3** | `feature/task` | **Papan Kanban Realtime & Detail Task:** CRUD kolom *list* (tambah, ubah nama, kunci, hapus), pemindahan kartu *drag-and-drop* secara *real-time*, serta seluruh fitur `TaskDetailScreen` (*cover*, deskripsi, *start/due date*, *subtask*, komentar, dan lampiran Storage + pratinjau penuh). | Selesai |
-| **Fase 4** | `feature/chat` | **Diskusi Real-time Board:** Ruang obrolan langsung per *board* (`BoardChatScreen`) menggunakan kanal WebSocket Supabase Realtime untuk komunikasi antar-anggota. | Integrasi |
-| **Fase 5** | `feature/poll` | **Polling & Voting Board:** Pembuatan jajak pendapat pada pengaturan *board*, mekanisme pemungutan suara anggota, dan kalkulasi persentase hasil secara langsung. | Rencana |
-| **Fase 6** | `feature/storage`<br>`feature/notification`<br>`release/v1.0.0` | **Storage Board, Laporan PDF, Notifikasi & Rilis:** Repositori berkas tingkat *board*, ekspor laporan progres ke PDF, notifikasi otomatis berbasis *database trigger*, pembersihan data *dummy*, dan rilis ke `main`. | Rencana |
+| **Fase 4** | `feature/chat` | **Diskusi Real-time Board:** Ruang obrolan langsung per *board* (`BoardChatScreen`) menggunakan kanal WebSocket Supabase Realtime untuk komunikasi antar-anggota. | Selesai |
+| **Fase 5** | `feature/poll` | **Polling & Voting Board:** Pembuatan jajak pendapat (`polls`, `poll_options`, `poll_votes`), pengaturan batas waktu UTC, opsi visibilitas hasil sebelum memilih, preferensi notifikasi selesai (`notify_on_end`), pemungutan suara interaktif, dan sinkronisasi *realtime*. | Selesai |
+| **Fase 6** | `feature/notification`<br>`feature/storage`<br>`release/v1.0.0` | **Notifikasi Realtime, Storage Board, Laporan PDF & Rilis:** Pusat notifikasi aktivitas *real-time* (`notifications`), repositori berkas tingkat *board*, ekspor laporan progres ke PDF, pembersihan data *dummy*, dan rilis ke `main`. | Berjalan |
 
 ---
 
 ## 2. Catatan Pembaruan & Perbaikan Teknis (Changelog)
 
-### Pembaruan Modul Detail Task & Lampiran
+### Pembaruan Modul Polling & Voting (`feature/poll`)
+* **Integrasi Penuh Backend & Realtime Polling:**
+  * Membuat `PollService` (`lib/services/poll_service.dart`) untuk CRUD polling (`polls`, `poll_options`, `poll_votes`) dan menghubungkannya ke `AppDataController` (`loadPollsForBoard`, `addPoll`, `votePoll`, `deletePoll`).
+  * Mengubah `PollingTab` menjadi reaktif terhadap saluran WebSocket Supabase Realtime pada tabel `polls`, `poll_options`, dan `poll_votes` sehingga perubahan pilihan suara langsung terlihat di seluruh perangkat anggota *board*.
+  * Mengimplementasikan aturan *privacy* hasil suara (`show_result_before_vote`) yang menyembunyikan persentase dan *progress bar* sebelum pengguna memberikan suara apabila opsi tersebut dimatikan, serta menyimpankan flag `notify_on_end` sebagai pemicu modul notifikasi.
+* **Perbaikan Selisih Zona Waktu (+7 Jam) & UI Batas Waktu:**
+  * *Masalah:* Pengaturan jam batas waktu polling sempat bergeser +7 jam saat disimpan karena `DateTime.toIso8601String()` dikirim tanpa konversi ke UTC, serta teks batas waktu di dalam modal berhimpitan (*overflow*) dengan judul instruksi.
+  * *Solusi:* Menambahkan `.toUtc().toIso8601String()` sebelum menyimpan `due_date` ke PostgreSQL, menambahkan penjaga validasi tenggat waktu di `votePoll`, dan memindahkan indikator batas waktu menjadi *banner* kontras di bawah teks instruksi.
+
+### Pembaruan Modul Detail Task & Lampiran (`feature/task`)
 * **Penyimpanan & Pratinjau Lampiran Multi-Sumber:**
   * Mengintegrasikan `image_picker` dan `file_picker` untuk mengunggah foto kamera dan berkas dokumen ke *bucket* publik Supabase Storage **`task-attachments`**, sekaligus menyimpan tautan URL ke tabel `task_attachments`.
   * Membangun komponen `AttachmentViewer` untuk menampilkan pratinjau gambar layar penuh (*pinch-to-zoom* dengan `InteractiveViewer`) lengkap dengan tombol navigasi dan unduh berlatar kontras tinggi.

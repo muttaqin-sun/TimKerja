@@ -949,6 +949,20 @@ class _BoardScreenState extends State<BoardScreen> {
           _hoveredListName = null;
         });
         final task = details.data;
+        final String taskId = task['id']?.toString() ?? '';
+
+        if (!AppDataController.instance.canUserEditTask(taskId)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Tugas melewati batas waktu dan dikunci. Hubungi Manager untuk memperpanjang tenggat.',
+              ),
+              backgroundColor: AppColors.error,
+            ),
+          );
+          return;
+        }
+
         if (task['listName'] != title) {
           HapticFeedback.mediumImpact();
           AppDataController.instance.moveTaskToList(task['id'], title);

@@ -5,6 +5,7 @@ import '../data/app_data.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/top_decor_blob.dart';
+import '../widgets/mention_suggestion_box.dart';
 
 class BoardChatScreen extends StatefulWidget {
   final String boardId;
@@ -27,11 +28,19 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
   bool _isSending = false;
   RealtimeChannel? _chatChannel;
 
+  String? _mentionQuery;
+
   @override
   void initState() {
     super.initState();
     _loadMessages();
     _setupRealtimeSubscription();
+    _messageController.addListener(() {
+      final q = MentionHelper.getActiveMentionQuery(_messageController);
+      if (q != _mentionQuery && mounted) {
+        setState(() => _mentionQuery = q);
+      }
+    });
   }
 
   @override
@@ -133,6 +142,13 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
             _messages.insert(0, sentMessage);
           });
         }
+        // Deteksi @mention dan kirim notifikasi ke anggota yang disebut
+        await AppDataController.instance.processMentionsAndNotify(
+          boardId: widget.boardId,
+          contentText: text,
+          contextLabel: 'Ruang Diskusi',
+          referenceId: widget.boardId,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -478,6 +494,7 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                 ),
 
                 // 4. INPUT AREA
+                // 4. INPUT AREA
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   decoration: BoxDecoration(
@@ -486,74 +503,97 @@ class _BoardChatScreenState extends State<BoardChatScreen> {
                       top: BorderSide(color: AppColors.borderLight),
                     ),
                   ),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceMuted.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: AppColors.borderLight),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.attach_file_rounded,
-                                color: AppColors.textMuted,
-                                size: 20,
+                      if (_mentionQuery != null)
+                        MentionSuggestionBox(
+                          members: members,
+                          query: _mentionQuery!,
+                          currentUserId: currentUserId,
+                          onSelectMember: (name) {
+                            MentionHelper.insertMention(
+                              _messageController,
+                              name,
+                            );
+                            setState(() => _mentionQuery = null);
+                          },
+                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: _messageController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Ketik pesan...',
-                                    hintStyle: AppTextStyles.cardSubtitle
-                                        .copyWith(fontSize: 13),
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 12,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceMuted.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: AppColors.borderLight,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.attach_file_rounded,
+                                    color: AppColors.textMuted,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _messageController,
+                                      decoration: InputDecoration(
+                                        hintText: 'Ketik pesan...',
+                                        hintStyle: AppTextStyles.cardSubtitle
+                                            .copyWith(fontSize: 13),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
+                                      ),
+                                      style: AppTextStyles.cardTitle.copyWith(
+                                        fontSize: 13,
+                                      ),
+                                      textInputAction: TextInputAction.send,
+                                      onSubmitted: (_) => _sendMessage(),
                                     ),
                                   ),
-                                  style: AppTextStyles.cardTitle.copyWith(
-                                    fontSize: 13,
-                                  ),
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) => _sendMessage(),
-                                ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: _isSending ? null : _sendMessage,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _isSending
-                                ? AppColors.primary.withOpacity(0.5)
-                                : AppColors.primary,
-                            shape: BoxShape.circle,
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: _isSending ? null : _sendMessage,
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _isSending
+                                    ? AppColors.primary.withOpacity(0.5)
+                                    : AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: _isSending
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.send_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                            ),
                           ),
-                          child: _isSending
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

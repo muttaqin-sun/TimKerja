@@ -8,6 +8,7 @@ import 'dart:async';
 
 import '../widgets/upload_progress_card.dart';
 import '../widgets/attachment_viewer.dart';
+import '../widgets/mention_suggestion_box.dart';
 
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -50,6 +51,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     Color(0xFF344563),
   ];
 
+  String? _commentMentionQuery;
   @override
   void initState() {
     super.initState();
@@ -64,6 +66,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       setState(() {
         _isEditingDesc = _descFocusNode.hasFocus;
       });
+    });
+    _commentCtrl.addListener(() {
+      final q = MentionHelper.getActiveMentionQuery(_commentCtrl);
+      if (q != _commentMentionQuery && mounted) {
+        setState(() => _commentMentionQuery = q);
+      }
     });
     // Tarik data lampiran terbaru dari Supabase saat halaman detail dibuka
     AppDataController.instance.loadTaskAttachments(widget.taskId);
@@ -112,26 +120,41 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
-  void _addComment() {
-    if (_commentCtrl.text.trim().isNotEmpty) {
-      AppDataController.instance.addComment(
-        widget.taskId,
-        _commentCtrl.text.trim(),
-      );
-      _commentCtrl.clear();
-      FocusScope.of(context).unfocus();
+  void _addComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
 
-      // Auto-scroll ke komentar paling bawah
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOutCubic,
-          );
-        }
-      });
+    final task = AppDataController.instance.tasks.firstWhere(
+      (t) => t['id'] == widget.taskId,
+      orElse: () => <String, dynamic>{},
+    );
+    final String boardId = task['boardId']?.toString() ?? '';
+    final String taskTitle = task['title']?.toString() ?? 'Tugas';
+
+    AppDataController.instance.addComment(widget.taskId, text);
+    _commentCtrl.clear();
+    setState(() => _commentMentionQuery = null);
+    FocusScope.of(context).unfocus();
+
+    if (boardId.isNotEmpty) {
+      await AppDataController.instance.processMentionsAndNotify(
+        boardId: boardId,
+        contentText: text,
+        contextLabel: 'Task "$taskTitle"',
+        referenceId: widget.taskId,
+      );
     }
+
+    // Auto-scroll ke komentar paling bawah
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   Future<void> _pickPhotoFromCamera() async {
@@ -472,6 +495,91 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showLockedSnackBar() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Tugas terkunci karena telah melewati batas waktu. Hubungi Manager untuk memperpanjang tenggat waktu.',
+        ),
+        backgroundColor: AppColors.error,
+      ),
+    );
+  }
+
+  void _showRevisionDialog() {
+    final noteCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Minta Revisi Tugas',
+          style: AppTextStyles.cardTitle.copyWith(fontSize: 17),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tugas akan dikembalikan ke status In Progress. Berikan catatan perbaikan untuk anggota:',
+              style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 3,
+              style: AppTextStyles.inputText.copyWith(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Contoh: Tolong lengkapi lampiran bukti pengujian...',
+                hintStyle: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                filled: true,
+                fillColor: AppColors.surfaceMuted,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Batal',
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await AppDataController.instance.reviewTaskDecision(
+                taskId: widget.taskId,
+                isApproved: false,
+                reviewNote: noteCtrl.text,
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Permintaan revisi dikirim ke anggota'),
+                    backgroundColor: AppColors.warning,
+                  ),
+                );
+              }
+            },
+            child: const Text(
+              'Kirim Revisi',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1238,6 +1346,173 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
+  void _showAssignMembersModal(
+    Map<String, dynamic> task,
+    List<dynamic> boardMembers,
+  ) {
+    final List currentTaskMembers = (task['members'] as List?) ?? [];
+    final Set<String> selectedIds = currentTaskMembers
+        .map((m) => (m is Map ? m['userId']?.toString() : '') ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Tugaskan Anggota',
+                      style: AppTextStyles.screenTitle.copyWith(fontSize: 18),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Pilih anggota board yang bertanggung jawab pada tugas ini',
+                      style: AppTextStyles.cardSubtitle.copyWith(fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.45,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: boardMembers.length,
+                        itemBuilder: (context, index) {
+                          final m = boardMembers[index] as Map;
+                          final String uid = m['userId']?.toString() ?? '';
+                          final String name =
+                              m['name']?.toString() ?? 'Anggota';
+                          final String role = m['role']?.toString() ?? 'Member';
+                          final int colorVal = m['color'] is int
+                              ? m['color'] as int
+                              : 0xFF00A896;
+                          final bool isChecked = selectedIds.contains(uid);
+
+                          return CheckboxListTile(
+                            value: isChecked,
+                            activeColor: AppColors.primary,
+                            contentPadding: EdgeInsets.zero,
+                            secondary: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: Color(colorVal)
+                                  .withOpacity(0.15),
+                              child: Text(
+                                _getInitials(name),
+                                style: TextStyle(
+                                  color: Color(colorVal),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              name,
+                              style: AppTextStyles.cardTitle.copyWith(
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              role,
+                              style: AppTextStyles.cardSubtitle.copyWith(
+                                fontSize: 11,
+                              ),
+                            ),
+                            onChanged: (val) {
+                              setModalState(() {
+                                if (val == true) {
+                                  selectedIds.add(uid);
+                                } else {
+                                  selectedIds.remove(uid);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final chosenMembers = boardMembers
+                              .where(
+                                (m) =>
+                                    m is Map &&
+                                    selectedIds.contains(
+                                      m['userId']?.toString(),
+                                    ),
+                              )
+                              .map((m) => Map<String, dynamic>.from(m as Map))
+                              .toList();
+
+                          Navigator.pop(ctx);
+                          await AppDataController.instance.updateTaskAssignees(
+                            taskId: widget.taskId,
+                            selectedMembers: chosenMembers,
+                          );
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Penugasan anggota berhasil diperbarui',
+                                ),
+                                backgroundColor: AppColors.primary,
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Simpan Penugasan',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -1248,10 +1523,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           orElse: () => <String, dynamic>{'title': 'Tugas tidak ditemukan'},
         );
 
-        if (task['id'] == null)
+        if (task['id'] == null) {
           return const Scaffold(
             body: Center(child: Text('Tugas tidak ditemukan')),
           );
+        }
 
         final subtasks = (task['subtasks'] as List?) ?? [];
         final comments = (task['comments'] as List?) ?? [];
@@ -1265,7 +1541,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           (b) => b['id'] == task['boardId'],
           orElse: () => <String, dynamic>{'title': 'Unknown'},
         );
-        // Ambil daftar anggota asli dari board
         final boardMembers = (board['members'] as List?) ?? [];
         final members = (task['members'] as List?)?.isNotEmpty == true
             ? (task['members'] as List)
@@ -1279,7 +1554,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ? Color(coverColorVal)
             : null;
 
-        // Membaca tanggal dari global state
         final String startDateDisplay =
             (task['startDate'] != null && task['startDate'] != 'Tanggal')
             ? "${task['startDate']} ${task['startTime'] ?? ''}"
@@ -1288,6 +1562,25 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             (task['dueDate'] != null && task['dueDate'] != 'Tanggal')
             ? "${task['dueDate']} ${task['dueTime'] ?? ''}"
             : "";
+
+        // Cek peran user, status review (Tahap 3), dan status overdue (Tahap 4)
+        final String myUserId = currentUser['id']?.toString() ?? '';
+        final currentMemberMap = boardMembers.firstWhere(
+          (m) => m is Map && m['userId']?.toString() == myUserId,
+          orElse: () => <String, dynamic>{},
+        );
+        final String myRole = (currentMemberMap['role']?.toString() ?? '')
+            .toLowerCase();
+        final bool isManager =
+            myRole == 'manager' || myRole == 'owner' || myRole == 'admin';
+
+        final String reviewStatus = task['reviewStatus']?.toString() ?? 'none';
+        final String? reviewNote = task['reviewNote']?.toString();
+        final bool showReviewSection =
+            reviewStatus != 'none' || (isManager && task['isDone'] == true);
+
+        final bool isOverdue = AppDataController.instance.isTaskOverdue(task);
+        final bool isLockedForMember = isOverdue && !isManager;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -1332,7 +1625,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: () => _showCoverSettingsModal(task),
+                        onPressed: isLockedForMember
+                            ? null
+                            : () => _showCoverSettingsModal(task),
                         icon: const Icon(Icons.video_label_rounded, size: 18),
                         label: const Text('Cover'),
                         style: OutlinedButton.styleFrom(
@@ -1358,6 +1653,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           children: [
                             GestureDetector(
                               onTap: () {
+                                if (isLockedForMember) {
+                                  _showLockedSnackBar();
+                                  return;
+                                }
                                 AppDataController.instance.toggleTaskCompletion(
                                   widget.taskId,
                                 );
@@ -1452,7 +1751,276 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
+
+                      // Banner Penguncian Akses Jika Overdue (Tahap 4)
+                      if (isOverdue) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: AppRadius.roundedLg,
+                            border: Border.all(
+                              color: const Color(0xFFFCA5A5),
+                              width: 1.3,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.lock_clock_rounded,
+                                color: AppColors.error,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      isLockedForMember
+                                          ? 'Akses Dikunci (Melewati Tenggat)'
+                                          : 'Tugas Melewati Tenggat Waktu',
+                                      style: AppTextStyles.cardTitle.copyWith(
+                                        fontSize: 13,
+                                        color: const Color(0xFF991B1B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      isLockedForMember
+                                          ? 'Batas waktu pengerjaan telah berakhir. Hubungi Manager untuk memperpanjang Due Date.'
+                                          : 'Tugas ini telah melewati tenggat. Sebagai Manager, Anda dapat memperpanjang Due Date di bawah untuk membuka kunci bagi anggota.',
+                                      style: AppTextStyles.cardSubtitle
+                                          .copyWith(
+                                            fontSize: 11,
+                                            color: const Color(0xFFB91C1C),
+                                            height: 1.35,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Panel Validasi & Revisi Tugas oleh Manager (Tahap 3)
+                      if (showReviewSection) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: reviewStatus == 'approved'
+                                ? const Color(0xFFECFDF5)
+                                : reviewStatus == 'revision'
+                                ? const Color(0xFFFEF2F2)
+                                : const Color(0xFFFFFBEB),
+                            borderRadius: AppRadius.roundedLg,
+                            border: Border.all(
+                              color: reviewStatus == 'approved'
+                                  ? const Color(0xFFA7F3D0)
+                                  : reviewStatus == 'revision'
+                                  ? const Color(0xFFFECACA)
+                                  : const Color(0xFFFDE68A),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    reviewStatus == 'approved'
+                                        ? Icons.verified_rounded
+                                        : reviewStatus == 'revision'
+                                        ? Icons.assignment_return_rounded
+                                        : Icons.hourglass_top_rounded,
+                                    size: 20,
+                                    color: reviewStatus == 'approved'
+                                        ? AppColors.success
+                                        : reviewStatus == 'revision'
+                                        ? AppColors.error
+                                        : AppColors.warning,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      reviewStatus == 'approved'
+                                          ? 'Tugas Tervalidasi (Valid)'
+                                          : reviewStatus == 'revision'
+                                          ? 'Perlu Revisi dari Manager'
+                                          : 'Menunggu Validasi Manager',
+                                      style: AppTextStyles.cardTitle.copyWith(
+                                        fontSize: 13,
+                                        color: reviewStatus == 'approved'
+                                            ? const Color(0xFF065F46)
+                                            : reviewStatus == 'revision'
+                                            ? const Color(0xFF991B1B)
+                                            : const Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (reviewNote != null &&
+                                  reviewNote.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.8),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Catatan Manager: "$reviewNote"',
+                                    style: AppTextStyles.cardSubtitle.copyWith(
+                                      fontSize: 12,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (isManager &&
+                                  (reviewStatus == 'pending_review' ||
+                                      (task['isDone'] == true &&
+                                          reviewStatus != 'approved'))) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _showRevisionDialog,
+                                        icon: const Icon(
+                                          Icons.edit_note_rounded,
+                                          size: 18,
+                                        ),
+                                        label: const Text(
+                                          'Revisi',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: AppColors.error,
+                                          side: const BorderSide(
+                                            color: AppColors.error,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () async {
+                                          await AppDataController.instance
+                                              .reviewTaskDecision(
+                                                taskId: widget.taskId,
+                                                isApproved: true,
+                                              );
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Tugas disetujui sebagai Valid',
+                                                    ),
+                                                    backgroundColor:
+                                                        AppColors.success,
+                                                  ),
+                                                );
+                                          }
+                                        },
+                                        icon: const Icon(
+                                          Icons.check_circle_outline_rounded,
+                                          size: 18,
+                                          color: Colors.white,
+                                        ),
+                                        label: const Text(
+                                          'Setujui (Valid)',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppColors.success,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (!isManager && reviewStatus == 'revision') ...[
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: isLockedForMember
+                                        ? _showLockedSnackBar
+                                        : () async {
+                                            await AppDataController.instance
+                                                .submitTaskForReview(
+                                                  widget.taskId,
+                                                );
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Revisi dikirim ulang untuk validasi Manager',
+                                                      ),
+                                                      backgroundColor:
+                                                          AppColors.primary,
+                                                    ),
+                                                  );
+                                            }
+                                          },
+                                    icon: const Icon(
+                                      Icons.send_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                    label: const Text(
+                                      'Kirim Ulang Hasil Revisi',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
 
                       Row(
                         children: [
@@ -1469,6 +2037,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       TextField(
                         controller: _descCtrl,
                         focusNode: _descFocusNode,
+                        readOnly: isLockedForMember,
                         maxLines: 4,
                         style: AppTextStyles.inputText.copyWith(
                           fontSize: 13,
@@ -1486,7 +2055,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         ),
                       ),
 
-                      if (_isEditingDesc) ...[
+                      if (_isEditingDesc && !isLockedForMember) ...[
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
@@ -1562,7 +2131,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   style: AppTextStyles.cardSubtitle,
                                 )
                               : null,
-                          onTap: () => _showStartDateDialog(task),
+                          onTap: () {
+                            if (isLockedForMember) {
+                              _showLockedSnackBar();
+                              return;
+                            }
+                            _showStartDateDialog(task);
+                          },
                         ),
                       ),
                       Container(
@@ -1587,10 +2162,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           trailing: dueDateDisplay.isNotEmpty
                               ? Text(
                                   dueDateDisplay,
-                                  style: AppTextStyles.cardSubtitle,
+                                  style: AppTextStyles.cardSubtitle.copyWith(
+                                    color: isOverdue ? AppColors.error : null,
+                                    fontWeight: isOverdue
+                                        ? FontWeight.bold
+                                        : null,
+                                  ),
                                 )
                               : null,
-                          onTap: () => _showDueDateDialog(task),
+                          onTap: () {
+                            if (isLockedForMember) {
+                              _showLockedSnackBar();
+                              return;
+                            }
+                            _showDueDateDialog(task);
+                          },
                         ),
                       ),
 
@@ -1616,7 +2202,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           IconButton(
                             icon: const Icon(Icons.add_rounded, size: 20),
                             color: AppColors.primary,
-                            onPressed: _showAttachmentBottomSheet,
+                            onPressed: () {
+                              if (isLockedForMember) {
+                                _showLockedSnackBar();
+                                return;
+                              }
+                              _showAttachmentBottomSheet();
+                            },
                           ),
                         ],
                       ),
@@ -1686,12 +2278,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           secondary: IconButton(
                             icon: const Icon(Icons.close_rounded, size: 16),
                             color: AppColors.textMuted,
-                            onPressed: () {
-                              AppDataController.instance.deleteSubtask(
-                                widget.taskId,
-                                index,
-                              );
-                            },
+                            onPressed: isLockedForMember
+                                ? _showLockedSnackBar
+                                : () {
+                                    AppDataController.instance.deleteSubtask(
+                                      widget.taskId,
+                                      index,
+                                    );
+                                  },
                           ),
                           title: Text(
                             item['title'],
@@ -1706,14 +2300,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                   : AppColors.textPrimary,
                             ),
                           ),
-                          onChanged: (_) => AppDataController.instance
-                              .toggleSubtask(widget.taskId, index),
+                          onChanged: isLockedForMember
+                              ? null
+                              : (_) => AppDataController.instance.toggleSubtask(
+                                  widget.taskId,
+                                  index,
+                                ),
                         );
                       }),
                       Row(
                         children: [
                           InkWell(
-                            onTap: _addSubtask,
+                            onTap: isLockedForMember
+                                ? _showLockedSnackBar
+                                : _addSubtask,
                             borderRadius: BorderRadius.circular(12),
                             child: Padding(
                               padding: const EdgeInsets.all(4.0),
@@ -1728,8 +2328,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           Expanded(
                             child: TextField(
                               controller: _subtaskCtrl,
+                              enabled: !isLockedForMember,
                               decoration: InputDecoration(
-                                hintText: 'Tambah subtask...',
+                                hintText: isLockedForMember
+                                    ? 'Subtask terkunci (melewati deadline)'
+                                    : 'Tambah subtask...',
                                 hintStyle: AppTextStyles.cardSubtitle,
                                 border: InputBorder.none,
                                 isDense: true,
@@ -1756,51 +2359,88 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                'Anggota',
+                                'Anggota Ditugaskan',
                                 style: AppTextStyles.sectionTitle,
                               ),
                             ],
                           ),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: AppColors.textMuted,
-                          ),
+                          if (isManager)
+                            TextButton.icon(
+                              onPressed: () =>
+                                  _showAssignMembersModal(task, boardMembers),
+                              icon: const Icon(
+                                Icons.person_add_alt_1_rounded,
+                                size: 16,
+                                color: AppColors.primary,
+                              ),
+                              label: const Text(
+                                'Atur',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      if (members.isEmpty)
+                      const SizedBox(height: 8),
+                      if ((task['members'] as List? ?? []).isEmpty)
                         Text(
-                          'Belum ada anggota tim pada tugas ini.',
+                          isManager
+                              ? 'Belum ada anggota ditugaskan. Ketuk "Atur" untuk memilih anggota.'
+                              : 'Belum ada anggota ditugaskan pada tugas ini.',
                           style: AppTextStyles.cardSubtitle,
                         )
                       else
-                        Row(
-                          children: [
-                            ...members.take(3).map((m) {
-                              return _buildMemberAvatar(
-                                Color(m['color']),
-                                initials: _getInitials(m['name']),
-                              );
-                            }),
-                            if (members.length > 3)
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.surfaceMuted,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '+${members.length - 3}',
-                                    style: AppTextStyles.cardSubtitle.copyWith(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: (task['members'] as List).map((m) {
+                            final name = m['name']?.toString() ?? 'Anggota';
+                            final colorVal = m['color'] is int
+                                ? m['color'] as int
+                                : 0xFF00A896;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Color(colorVal).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Color(colorVal).withOpacity(0.4),
                                 ),
                               ),
-                          ],
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: Color(colorVal),
+                                    child: Text(
+                                      _getInitials(name),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    name,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(colorVal),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
                         ),
                       const SizedBox(height: 24),
 
@@ -1849,6 +2489,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         }),
                       ],
                       const SizedBox(height: 12),
+
+                      if (_commentMentionQuery != null)
+                        MentionSuggestionBox(
+                          members: boardMembers,
+                          query: _commentMentionQuery!,
+                          currentUserId: currentUser['id']?.toString() ?? '',
+                          onSelectMember: (name) {
+                            MentionHelper.insertMention(_commentCtrl, name);
+                            setState(() => _commentMentionQuery = null);
+                          },
+                        ),
 
                       Container(
                         padding: const EdgeInsets.symmetric(

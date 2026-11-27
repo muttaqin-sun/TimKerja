@@ -31,6 +31,7 @@ dependencies:
   dio: ^5.11.1
   path_provider: ^2.1.6
   open_filex: ^5.0.0
+  flutter_local_notifications: ^18.0.1
 
 # Package khusus kebutuhan pengembangan dan pengujian
 dev_dependencies:
